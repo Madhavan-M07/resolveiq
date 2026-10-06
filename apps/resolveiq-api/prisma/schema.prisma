@@ -1,0 +1,128 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js" 
+}
+
+enum Role {
+  ADMIN
+  SRE
+  DEVELOPER
+  VIEWER
+}
+
+enum IncidentSeverity {
+  SEV_1
+  SEV_2
+  SEV_3
+  SEV_4
+}
+
+enum IncidentStatus {
+  OPEN
+  INVESTIGATING
+  ROOT_CAUSE_IDENTIFIED
+  REMEDIATION_PENDING_APPROVAL
+  MITIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum ServiceStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  users       User[]
+  services    Service[]
+  incidents   Incident[]
+  auditEvents AuditEvent[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  name           String
+  role           Role         @default(SRE)
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("users")
+}
+
+model Service {
+  id                   String        @id @default(uuid())
+  name                 String
+  description          String
+  tier                 String        @default("TIER-1")
+  status               ServiceStatus @default(HEALTHY)
+  latencyP99Ms         Float         @default(120.0)
+  errorRatePercent     Float         @default(0.0)
+  activeIncidentsCount Int           @default(0)
+  currentVersion       String        @default("v1.0.0")
+  lastDeployedAt       DateTime      @default(now())
+  organizationId       String
+  organization         Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  incidents            Incident[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  @@map("services")
+}
+
+model Incident {
+  id                String           @id @default(uuid())
+  incidentNumber    String           @unique
+  title             String
+  severity          IncidentSeverity @default(SEV_1)
+  status            IncidentStatus   @default(OPEN)
+  impactSummary     String
+  startedAt         DateTime         @default(now())
+  mitigatedAt       DateTime?
+  resolvedAt        DateTime?
+  commanderName     String?
+  serviceId         String
+  service           Service          @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  organizationId    String
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  metrics           Json?
+  recentLogs        Json?
+  recentDeployments Json?
+  rca               Json?
+  remediationPlan   Json?
+
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@map("incidents")
+}
+
+model AuditEvent {
+  id             String       @id @default(uuid())
+  actor          String
+  action         String
+  targetEntity   String
+  entityId       String
+  rationale      String
+  status         String       @default("SUCCESS")
+  timestamp      DateTime     @default(now())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("audit_events")
+}

@@ -1,0 +1,418 @@
+{
+  "info": {
+    "_postman_id": "resolveiq-enterprise-api-collection-v1",
+    "name": "ResolveIQ — AI Incident Resolution Platform",
+    "description": "Complete production API collection for ResolveIQ: Incidents, Autonomous LangGraph RCA, Human-in-the-Loop Remediation, Chaos Sandbox, Database Inspector, and OpsHub Integrations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:4000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "auth_token",
+      "value": "mock_jwt_sre_bearer_token",
+      "type": "string"
+    },
+    {
+      "key": "org_id",
+      "value": "org_acme_corp",
+      "type": "string"
+    },
+    {
+      "key": "incident_id",
+      "value": "inc-1042",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Chaos Simulation Sandbox",
+      "description": "Trigger real failure scenarios to simulate production outages",
+      "item": [
+        {
+          "name": "List Failure Scenarios",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/sandbox/scenarios",
+              "host": ["{{base_url}}"],
+              "path": ["sandbox", "scenarios"]
+            }
+          }
+        },
+        {
+          "name": "Trigger Scenario (payment-db-pool)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenarioId\": \"payment-db-pool\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sandbox/scenarios/trigger",
+              "host": ["{{base_url}}"],
+              "path": ["sandbox", "scenarios", "trigger"]
+            }
+          }
+        },
+        {
+          "name": "Reset Sandbox to Baseline",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/sandbox/scenarios/reset",
+              "host": ["{{base_url}}"],
+              "path": ["sandbox", "scenarios", "reset"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Incidents & Triage",
+      "description": "Lifecycle management of production incidents",
+      "item": [
+        {
+          "name": "List All Incidents",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/incidents",
+              "host": ["{{base_url}}"],
+              "path": ["incidents"]
+            }
+          }
+        },
+        {
+          "name": "Get Incident by ID (inc-1042)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/incidents/{{incident_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["incidents", "{{incident_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Incident (Manual or Webhook)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Payment API Latency Spike & 5xx Outage\",\n  \"serviceId\": \"svc-payment\",\n  \"severity\": \"SEV-1\",\n  \"description\": \"18.4% of checkout requests failing. P99 latency degraded from 240ms to 4,820ms.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/incidents",
+              "host": ["{{base_url}}"],
+              "path": ["incidents"]
+            }
+          }
+        },
+        {
+          "name": "Update Incident Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"MITIGATING\",\n  \"resolutionNote\": \"Rollback initiated by SRE lead.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/incidents/{{incident_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["incidents", "{{incident_id}}", "status"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Human-in-the-Loop Remediation",
+      "description": "Safe approvals and controlled execution of AI rollback plans",
+      "item": [
+        {
+          "name": "Approve Remediation (rem-1 Rollback)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"actionId\": \"rem-1\",\n  \"approvedBy\": \"sarah.sre@acme.internal\",\n  \"rationale\": \"Confirmed database pool leak in deployment v1.8.2. Rollback to v1.8.1 approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/incidents/{{incident_id}}/remediation/approve",
+              "host": ["{{base_url}}"],
+              "path": ["incidents", "{{incident_id}}", "remediation", "approve"]
+            }
+          }
+        },
+        {
+          "name": "Execute Remediation (Rollback to v1.8.1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" },
+              { "key": "Idempotency-Key", "value": "idemp-req-99104" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"actionId\": \"rem-1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/incidents/{{incident_id}}/remediation/execute",
+              "host": ["{{base_url}}"],
+              "path": ["incidents", "{{incident_id}}", "remediation", "execute"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Services Catalog & Telemetry",
+      "description": "Fleet overview and real-time health inspection",
+      "item": [
+        {
+          "name": "List All Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/services",
+              "host": ["{{base_url}}"],
+              "path": ["services"]
+            }
+          }
+        },
+        {
+          "name": "Get Service Health (svc-payment)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/services/svc-payment/health",
+              "host": ["{{base_url}}"],
+              "path": ["services", "svc-payment", "health"]
+            }
+          }
+        },
+        {
+          "name": "Get Service Deployments",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/services/svc-payment/deployments",
+              "host": ["{{base_url}}"],
+              "path": ["services", "svc-payment", "deployments"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Enterprise Integrations & OpsHub",
+      "description": "Autonomous communication and collaboration integrations",
+      "item": [
+        {
+          "name": "Send Executive Incident Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"recipients\": [\"vp-engineering@acme.com\", \"reporting-manager@acme.com\"],\n  \"subject\": \"[SEV-1 INCIDENT ALERT] Payment API Outage — RCA & Rollback in Progress\",\n  \"executiveSummary\": \"At 10:32 AM, payment-api degraded affecting 18.4% of checkout requests. Root cause identified as connection pool exhaustion in v1.8.2. SRE approved automated rollback.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/integrations/email/send",
+              "host": ["{{base_url}}"],
+              "path": ["integrations", "email", "send"]
+            }
+          }
+        },
+        {
+          "name": "Schedule War Room (Google/Outlook Calendar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"title\": \"🚨 EMERGENCY WAR ROOM: INC-1042 Payment API Outage\",\n  \"attendees\": [\"alex.dev@acme.com\", \"sarah.sre@acme.com\", \"vp-engineering@acme.com\"],\n  \"durationMinutes\": 30\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/integrations/calendar/war-room",
+              "host": ["{{base_url}}"],
+              "path": ["integrations", "calendar", "war-room"]
+            }
+          }
+        },
+        {
+          "name": "Create Jira Incident Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"projectKey\": \"PROD\",\n  \"summary\": \"[SEV-1] Payment API Latency Spike & 5xx Outage\",\n  \"description\": \"Autonomously generated by ResolveIQ.\\nRoot Cause: DB Connection Pool Exhaustion (91% confidence).\\nEvidence: 4,821 timeout errors in logs; active connections 100/100 following deployment v1.8.2.\",\n  \"priority\": \"Highest\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/integrations/jira/ticket",
+              "host": ["{{base_url}}"],
+              "path": ["integrations", "jira", "ticket"]
+            }
+          }
+        },
+        {
+          "name": "Send MS Teams / Slack Alert Card",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"incidentId\": \"{{incident_id}}\",\n  \"channel\": \"#incident-war-room\",\n  \"cardData\": {\n    \"severity\": \"SEV-1\",\n    \"service\": \"payment-api\",\n    \"rootCause\": \"Database Connection Pool Exhaustion\",\n    \"actionRequired\": \"Approve Rollback to v1.8.1\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/integrations/teams/notify",
+              "host": ["{{base_url}}"],
+              "path": ["integrations", "teams", "notify"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Database Schema & Lock Inspector",
+      "description": "Database diagnostic tools via Model Context Protocol",
+      "item": [
+        {
+          "name": "Inspect Database Schemas & Tables",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/database/schemas?dbName=payment_production",
+              "host": ["{{base_url}}"],
+              "path": ["database", "schemas"],
+              "query": [
+                { "key": "dbName", "value": "payment_production" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Query Active Database Locks (pg_stat_activity)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/database/locks",
+              "host": ["{{base_url}}"],
+              "path": ["database", "locks"]
+            }
+          }
+        },
+        {
+          "name": "Terminate Blocking Query (Kill PID)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/database/locks/4821/kill",
+              "host": ["{{base_url}}"],
+              "path": ["database", "locks", "4821", "kill"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Audit & Compliance Trail",
+      "description": "Query immutable audit logs for compliance",
+      "item": [
+        {
+          "name": "List Audit Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Organization-Id", "value": "{{org_id}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/audit/events",
+              "host": ["{{base_url}}"],
+              "path": ["audit", "events"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

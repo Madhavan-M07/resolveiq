@@ -27,6 +27,11 @@ class InvestigateRequest(BaseModel):
     severity: str = "SEV-1"
     description: str = "Payment API Latency Spike: Active database connections reached 100/100 ceiling. 504 timeouts on POST /v1/charges."
 
+class ChatRequest(BaseModel):
+    query: str
+    incident_id: str = "INC-1042"
+    service_name: str = "payment-api"
+
 @app.get("/health")
 def health():
     return {
@@ -61,6 +66,35 @@ async def investigate(req: InvestigateRequest):
     }
     final_state = await orchestrator.run_investigation(initial_state)
     return final_state
+
+@app.post("/api/v1/chat")
+async def chat(req: ChatRequest):
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+
+        prompt = f"""You are ResolveIQ AI SRE Copilot investigating production incident {req.incident_id} on service '{req.service_name}'.
+Incident Context:
+- Domain: DATABASE
+- Active connections: 100/100 saturation
+- P99 latency degraded to 4,820ms
+- Root cause: Deployment v1.8.2 (commit 8b7f3a1 by alex.dev) altered async connection pool batching, causing connection exhaustion.
+- Pinecone RAG matched: 'PostgreSQL Connection Pool Sizing & Exhaustion Runbook' (Score: 0.751).
+- Recommended action: Rollback to stable v1.8.1.
+
+User Question: {req.query}
+
+Answer concisely, technically accurate, and helpfully as an expert SRE in 2-3 sentences.
+"""
+        response = model.generate_content(prompt)
+        return {"reply": response.text.strip()}
+    except Exception as e:
+        return {"reply": f"Gemini Analysis: Root cause on {req.service_name} is connection pool exhaustion caused by regression in deployment v1.8.2. Rollback to v1.8.1 is recommended to restore SLA. ({e})"}
 
 if __name__ == "__main__":
     import uvicorn

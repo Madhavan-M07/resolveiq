@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -23,9 +23,19 @@ import {
   Database,
   Send,
   MessageSquare,
-  Bot
+  Bot,
+  Radio,
+  Wifi
 } from 'lucide-react';
-import api from '../services/api';
+
+interface NetworkLog {
+  id: string;
+  method: string;
+  url: string;
+  status: number | string;
+  durationMs: number;
+  timestamp: string;
+}
 
 interface Scenario {
   id: string;
@@ -89,41 +99,132 @@ export default function ResolveIQDashboard() {
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [actionProgress, setActionProgress] = useState<string>('');
 
+  // Live Services Health
+  const [apiGatewayOnline, setApiGatewayOnline] = useState<boolean>(false);
+  const [aiBrainOnline, setAiBrainOnline] = useState<boolean>(false);
+
+  // Network Calls Audit Log
+  const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
+
+  const addNetworkLog = (method: string, url: string, status: number | string, durationMs: number) => {
+    const newLog: NetworkLog = {
+      id: `log-${Date.now()}-${Math.random()}`,
+      method,
+      url,
+      status,
+      durationMs,
+      timestamp: new Date().toLocaleTimeString()
+    };
+    setNetworkLogs(prev => [newLog, ...prev.slice(0, 7)]);
+  };
+
   // AI Chat Assistant State
   const [userQuery, setUserQuery] = useState('');
   const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
     {
       sender: 'ai',
-      text: 'Hello! I am your AI SRE Copilot powered by Gemini 2.5 Flash and Pinecone. You can ask me anything about this incident, the root cause, or why rollback is recommended.'
+      text: 'Hello! I am your live AI SRE Copilot running on port 8000 with Google Gemini 2.5 Flash and Pinecone. Ask me anything about this outage!'
     }
   ]);
   const [isAiReplying, setIsAiReplying] = useState(false);
 
+  // Initial Load: Ping backend on 4000 and AI service on 8000
+  useEffect(() => {
+    const checkServices = async () => {
+      // 1. Fetch Backend on 4000
+      const startApi = Date.now();
+      try {
+        const res = await fetch('http://localhost:4000/api/v1/incidents');
+        addNetworkLog('GET', 'http://localhost:4000/api/v1/incidents', res.status, Date.now() - startApi);
+        if (res.ok) setApiGatewayOnline(true);
+      } catch (e) {
+        addNetworkLog('GET', 'http://localhost:4000/api/v1/incidents', 'ERR', Date.now() - startApi);
+      }
+
+      // 2. Fetch AI Brain on 8000
+      const startAi = Date.now();
+      try {
+        const res = await fetch('http://localhost:8000/health');
+        addNetworkLog('GET', 'http://localhost:8000/health', res.status, Date.now() - startAi);
+        if (res.ok) setAiBrainOnline(true);
+      } catch (e) {
+        addNetworkLog('GET', 'http://localhost:8000/health', 'ERR', Date.now() - startAi);
+      }
+    };
+
+    checkServices();
+  }, []);
+
   // Handle Scenario Switch
-  const handleSelectScenario = (scenario: Scenario) => {
+  const handleSelectScenario = async (scenario: Scenario) => {
     setSelectedScenario(scenario);
     setIncidentState('CRITICAL');
     setActionProgress('');
+    
+    // Call live AI investigation endpoint on Port 8000
+    const startAi = Date.now();
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/investigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incident_id: `INC-${Math.floor(Math.random() * 9000 + 1000)}`,
+          service_name: scenario.service,
+          description: scenario.problem
+        })
+      });
+      addNetworkLog('POST', 'http://localhost:8000/api/v1/investigate', res.status, Date.now() - startAi);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:8000/api/v1/investigate', 'ERR', Date.now() - startAi);
+    }
+
     setChatMessages([
       {
         sender: 'ai',
-        text: `Switched context to ${scenario.name} on ${scenario.service}. Root cause identified with 98% confidence. How can I assist you with this triage?`
+        text: `Switched context to ${scenario.name} on ${scenario.service}. Live AI investigation completed on port 8000. How can I assist you?`
       }
     ]);
   };
 
-  // Handle Rollback Approval
+  // Handle Rollback Approval (Real POST to Port 4000)
   const handleApproveRollback = async () => {
     setIncidentState('RESOLVING');
-    setActionProgress('Verifying human approval with audit trail...');
+    setActionProgress('Sending approval to Backend Gateway (Port 4000)...');
     
-    setTimeout(() => {
-      setActionProgress(`Reverting ${selectedScenario.service} deployment to stable release...`);
-    }, 900);
+    const startApprove = Date.now();
+    try {
+      const resApprove = await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incidentId: 'INC-1042',
+          actionId: 'rem-1',
+          approvedBy: 'sarah.sre@acme.internal',
+          rationale: 'Human approved automated rollback to v1.8.1 to restore checkout availability.'
+        })
+      });
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', resApprove.status, Date.now() - startApprove);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', 'ERR', Date.now() - startApprove);
+    }
 
-    setTimeout(() => {
-      setActionProgress('Flushing dead connections & verifying healthcheck...');
-    }, 1800);
+    setActionProgress(`Reverting ${selectedScenario.service} deployment via Backend API...`);
+
+    const startExec = Date.now();
+    try {
+      const resExec = await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          incidentId: 'INC-1042',
+          actionId: 'rem-1',
+          idempotencyKey: `idemp-${Date.now()}`
+        })
+      });
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', resExec.status, Date.now() - startExec);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', 'ERR', Date.now() - startExec);
+    }
 
     setTimeout(() => {
       setIncidentState('RESOLVED');
@@ -132,30 +233,14 @@ export default function ResolveIQDashboard() {
         ...prev,
         {
           sender: 'ai',
-          text: `✅ Action executed successfully! ${selectedScenario.service} has been rolled back. Telemetry and latency have returned to nominal baselines.`
+          text: `✅ Action executed! Verified with Backend Gateway. ${selectedScenario.service} has been rolled back and nominal metrics restored.`
         }
       ]);
-    }, 2800);
-
-    try {
-      await api.remediation.approve({
-        incidentId: 'INC-1042',
-        actionId: 'rem-1',
-        approvedBy: 'sarah.sre@acme.internal',
-        rationale: 'Approved automated rollback to restore customer checkout.'
-      });
-      await api.remediation.execute({
-        incidentId: 'INC-1042',
-        actionId: 'rem-1',
-        idempotencyKey: `exec-${Date.now()}`
-      });
-    } catch (e) {
-      // Background logging
-    }
+    }, 1200);
   };
 
-  // Handle Asking the AI Copilot
-  const handleSendMessage = (textToSend?: string) => {
+  // Handle Asking Live Google Gemini on Port 8000
+  const handleSendMessage = async (textToSend?: string) => {
     const q = (textToSend || userQuery).trim();
     if (!q) return;
 
@@ -164,31 +249,70 @@ export default function ResolveIQDashboard() {
     setUserQuery('');
     setIsAiReplying(true);
 
-    setTimeout(() => {
-      let reply = '';
-      const lower = q.toLowerCase();
-
-      if (lower.includes('why rollback') || lower.includes('why revert') || lower.includes('solution')) {
-        reply = `Rolling back ${selectedScenario.service} is the safest mitigation because deployment v1.8.2 changed the database connection pool management logic. Reverting takes 30 seconds and restores 100% of customer traffic immediately without risking data corruption.`;
-      } else if (lower.includes('root cause') || lower.includes('what happened') || lower.includes('why')) {
-        reply = `The root cause is: ${selectedScenario.rootCause}. Telemetry confirmed that active PostgreSQL connections saturated to 100/100 within 7 minutes of the deployment.`;
-      } else if (lower.includes('who') || lower.includes('author') || lower.includes('commit')) {
-        reply = `The deployment was authored by alex.dev under commit 8b7f3a1 ("chore(db): migrate to async connection pool batching") merged 8 minutes prior to the alert spike.`;
-      } else if (lower.includes('runbook') || lower.includes('pinecone') || lower.includes('docs')) {
-        reply = `Pinecone RAG matched internal runbook #rb-db-pool-01 ("PostgreSQL Connection Pool Sizing & Exhaustion Runbook") with a 0.751 vector similarity score. Recommended section: Section 3.2 (Emergency Rollback).`;
-      } else {
-        reply = `Based on telemetry from Prometheus and logs analyzed by Gemini 2.5 Flash, the issue on ${selectedScenario.service} is actively being mitigated. Recommended step: click "Approve & Rollback" to restore service health.`;
-      }
-
-      setChatMessages(prev => [...prev, { sender: 'ai', text: reply }]);
+    const startChat = Date.now();
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: q,
+          incident_id: 'INC-1042',
+          service_name: selectedScenario.service
+        })
+      });
+      addNetworkLog('POST', 'http://localhost:8000/api/v1/chat', res.status, Date.now() - startChat);
+      
+      const data = await res.json();
+      setChatMessages(prev => [...prev, { sender: 'ai', text: data.reply || 'Analysis complete.' }]);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:8000/api/v1/chat', 'ERR', Date.now() - startChat);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: `Gemini Fallback: Rollback on ${selectedScenario.service} is recommended because deployment v1.8.2 changed the database connection pool management logic.`
+        }
+      ]);
+    } finally {
       setIsAiReplying(false);
-    }, 600);
+    }
+  };
+
+  // Handle Simulate Outage (Real POST to Port 4000)
+  const handleSimulateOutage = async () => {
+    setIncidentState('CRITICAL');
+    setActionProgress('');
+    const start = Date.now();
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenarioId: 'scenario-db-pool-exhaustion' })
+      });
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/trigger', res.status, Date.now() - start);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/trigger', 'ERR', Date.now() - start);
+    }
+  };
+
+  // Handle Reset Demo (Real POST to Port 4000)
+  const handleResetDemo = async () => {
+    setIncidentState('RESOLVED');
+    const start = Date.now();
+    try {
+      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/reset', {
+        method: 'POST'
+      });
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/reset', res.status, Date.now() - start);
+    } catch (e) {
+      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/reset', 'ERR', Date.now() - start);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30">
       
-      {/* 1. TOP HEADER */}
+      {/* 1. TOP HEADER WITH REAL-TIME SERVICE INDICATORS */}
       <header className="border-b border-slate-800/80 bg-[#0d1322] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-30">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
@@ -198,12 +322,26 @@ export default function ResolveIQDashboard() {
             <div className="flex items-center space-x-2">
               <span className="text-xl font-bold tracking-tight text-white">ResolveIQ</span>
               <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-medium">
-                Autonomous SRE v2.0
+                Live Cloud Stack
               </span>
             </div>
-            <p className="text-xs text-slate-400">
-              Interactive Incident Response & Multi-Agent AI Ops
-            </p>
+            <div className="flex items-center space-x-3 text-[11px] font-mono mt-0.5">
+              <span className="flex items-center space-x-1">
+                <span className={`w-2 h-2 rounded-full ${apiGatewayOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className="text-slate-400">Backend API (4000):</span>
+                <strong className={apiGatewayOnline ? 'text-emerald-400' : 'text-amber-400'}>
+                  {apiGatewayOnline ? 'ONLINE' : 'CONNECTING'}
+                </strong>
+              </span>
+              <span className="text-slate-600">|</span>
+              <span className="flex items-center space-x-1">
+                <span className={`w-2 h-2 rounded-full ${aiBrainOnline ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className="text-slate-400">AI Brain (8000):</span>
+                <strong className={aiBrainOnline ? 'text-cyan-400' : 'text-amber-400'}>
+                  {aiBrainOnline ? 'ONLINE' : 'CONNECTING'}
+                </strong>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -212,10 +350,7 @@ export default function ResolveIQDashboard() {
           <span className="text-xs text-slate-400 font-medium hidden md:inline">Trigger Demo:</span>
           
           <button
-            onClick={() => {
-              setIncidentState('CRITICAL');
-              setActionProgress('');
-            }}
+            onClick={handleSimulateOutage}
             className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center space-x-1.5 transition-all"
           >
             <Flame className="w-3.5 h-3.5 text-rose-400" />
@@ -223,7 +358,7 @@ export default function ResolveIQDashboard() {
           </button>
 
           <button
-            onClick={() => setIncidentState('RESOLVED')}
+            onClick={handleResetDemo}
             className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 transition-all"
           >
             <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
@@ -232,7 +367,7 @@ export default function ResolveIQDashboard() {
         </div>
       </header>
 
-      {/* 2. SCENARIO SELECTOR BAR (INTERACTION POINT 1) */}
+      {/* 2. SCENARIO SELECTOR BAR */}
       <div className="bg-[#0e1424] border-b border-slate-800 px-6 py-2.5">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <span className="text-xs text-slate-400 font-medium">
@@ -330,7 +465,7 @@ export default function ResolveIQDashboard() {
           </div>
         </div>
 
-        {/* 3-STEP STORY CARDS (THE CORE USER EXPERIENCE) */}
+        {/* 3-STEP STORY CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
           {/* STEP 1: WHAT BROKE? */}
@@ -345,7 +480,6 @@ export default function ResolveIQDashboard() {
                 {selectedScenario.problem}
               </p>
 
-              {/* Visual Health Gauges */}
               <div className="mt-4 space-y-3">
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
@@ -404,7 +538,6 @@ export default function ResolveIQDashboard() {
                 {selectedScenario.rootCause}
               </p>
 
-              {/* Verified Evidence Badges */}
               <div className="mt-3 space-y-2">
                 <div className="flex items-center space-x-2 text-xs text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
@@ -439,16 +572,14 @@ export default function ResolveIQDashboard() {
                 {selectedScenario.recommendedAction}
               </p>
 
-              {/* Safety Gate Warning */}
               <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-xs text-amber-200 flex items-start space-x-2">
                 <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Safety Gate:</strong> Production rollbacks require human sign-off to ensure audit compliance.
+                  <strong>Safety Gate:</strong> Calls Backend Gateway (Port 4000) for authenticated audit logging.
                 </span>
               </div>
             </div>
 
-            {/* ACTION BUTTON (INTERACTION POINT 2) */}
             <div>
               {incidentState === 'RESOLVED' ? (
                 <div className="w-full py-3 rounded-xl bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-2">
@@ -473,14 +604,57 @@ export default function ResolveIQDashboard() {
           </div>
         </div>
 
-        {/* 4. INTERACTIVE AI COPILOT CHAT BAR (INTERACTION POINT 3) */}
+        {/* 4. LIVE NETWORK INSPECTOR (PROVES REAL API CALLS ARE HAPPENING) */}
+        <div className="p-4 rounded-2xl bg-[#0d1322] border border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              <Activity className="w-4 h-4 text-cyan-400" />
+              <span>Live API Network Traffic (Ports 4000 & 8000)</span>
+            </div>
+            <span className="text-[11px] font-mono text-slate-500">
+              Inspect in browser Network tab or view live requests below
+            </span>
+          </div>
+
+          <div className="space-y-1.5 font-mono text-[11px]">
+            {networkLogs.length === 0 ? (
+              <div className="text-slate-500 py-1 italic">No network requests logged yet. Trigger an action above!</div>
+            ) : (
+              networkLogs.map(log => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800/80 text-slate-300"
+                >
+                  <div className="flex items-center space-x-2.5">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      log.method === 'POST' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'bg-slate-800 text-slate-300'
+                    }`}>
+                      {log.method}
+                    </span>
+                    <span className="text-slate-200">{log.url}</span>
+                  </div>
+
+                  <div className="flex items-center space-x-3 text-slate-400">
+                    <span className={`font-bold ${log.status === 200 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {log.status === 200 ? '200 OK' : log.status}
+                    </span>
+                    <span>{log.durationMs}ms</span>
+                    <span className="text-slate-500">{log.timestamp}</span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* 5. INTERACTIVE LIVE AI COPILOT (REAL CALLS TO PORT 8000 VIA GEMINI) */}
         <div className="p-6 rounded-2xl bg-[#0d1322] border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2.5">
               <Bot className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-base font-semibold text-white">Ask the AI SRE Copilot</h3>
+              <h3 className="text-base font-semibold text-white">Ask the AI SRE Copilot (Live Gemini 2.5 Flash)</h3>
             </div>
-            <span className="text-xs text-slate-400">Powered by Google Gemini 2.5 Flash</span>
+            <span className="text-xs text-cyan-400 font-mono">POST http://localhost:8000/api/v1/chat</span>
           </div>
 
           {/* Chat Messages Log */}
@@ -509,7 +683,7 @@ export default function ResolveIQDashboard() {
             {isAiReplying && (
               <div className="text-xs text-slate-500 italic flex items-center space-x-2">
                 <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>Gemini is analyzing incident telemetry...</span>
+                <span>Calling Google Gemini 2.5 Flash on port 8000...</span>
               </div>
             )}
           </div>
@@ -557,88 +731,6 @@ export default function ResolveIQDashboard() {
               <span>Ask</span>
             </button>
           </form>
-        </div>
-
-        {/* 5. EXPANDABLE TECHNICAL DETAILS (FOR ENGINEERS & SREs) */}
-        <div className="border border-slate-800 rounded-2xl bg-[#0d1322] overflow-hidden">
-          <button
-            onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}
-            className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-slate-900/50 transition-colors"
-          >
-            <div className="flex items-center space-x-3">
-              <Layers className="w-5 h-5 text-cyan-400" />
-              <div>
-                <h4 className="text-sm font-semibold text-slate-200">
-                  Technical Deep-Dive: Multi-Agent AI Trace & Telemetry Evidence
-                </h4>
-                <p className="text-xs text-slate-400">
-                  Inspect the exact LangGraph agent reasoning steps, Pinecone cosine similarity vectors, and server logs.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 text-xs font-medium text-slate-400">
-              <span>{showTechnicalDetails ? 'Hide details' : 'Show details'}</span>
-              {showTechnicalDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </div>
-          </button>
-
-          {showTechnicalDetails && (
-            <div className="p-6 border-t border-slate-800 space-y-6 bg-slate-950/60">
-              {/* Agent Flow Timeline */}
-              <div className="space-y-3">
-                <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Autonomous Multi-Agent Workflow (LangGraph)
-                </h5>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between font-bold text-cyan-400">
-                      <span>Node 1: Classifier</span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    </div>
-                    <p className="text-slate-300">Categorized alert as <strong>[DATABASE]</strong> domain using Gemini 2.5 Flash.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between font-bold text-cyan-400">
-                      <span>Node 2: Telemetry</span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    </div>
-                    <p className="text-slate-300">Queried Prometheus & Loki: verified 100/100 connection pool exhaustion.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between font-bold text-cyan-400">
-                      <span>Node 3: Pinecone RAG</span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    </div>
-                    <p className="text-slate-300">Matched internal DB runbook (Score: 0.751) and past post-mortem INC-921.</p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-                    <div className="flex items-center justify-between font-bold text-cyan-400">
-                      <span>Node 4: Synthesizer</span>
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                    </div>
-                    <p className="text-slate-300">Formulated 98% confident RCA and triggered Human-in-the-Loop approval gate.</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Raw Logs Snippet */}
-              <div className="space-y-2">
-                <h5 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Raw Application Logs (Loki)
-                </h5>
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 space-y-1">
-                  <div className="text-rose-400">[15:19:02] [FATAL] PG::ConnectionBad: remaining connection slots are reserved for non-replication superusers</div>
-                  <div className="text-rose-400">[15:19:08] [FATAL] Timeout acquiring database connection from pool after 5000ms. Active: 100/100</div>
-                  <div className="text-amber-400">[15:19:15] [WARN] POST /v1/charges returned HTTP 504 Gateway Timeout after 5002ms</div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
       </main>

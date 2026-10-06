@@ -41,7 +41,13 @@ import {
   Filter,
   Download,
   Share2,
-  Maximize2
+  Maximize2,
+  Bot,
+  Sparkles,
+  Send,
+  X,
+  MessageSquare,
+  CornerDownLeft
 } from 'lucide-react';
 
 // ============================================================================
@@ -116,6 +122,13 @@ interface AuditEntry {
   result: 'SUCCESS' | 'PENDING' | 'DENIED';
 }
 
+interface ChatMessage {
+  id: string;
+  sender: 'user' | 'copilot';
+  timestamp: string;
+  text: string;
+}
+
 export default function SREConsole() {
   // Navigation & View state
   const [activeNav, setActiveNav] = useState('incidents-active');
@@ -124,6 +137,19 @@ export default function SREConsole() {
   const [selectedLogFilter, setSelectedLogFilter] = useState<'ALL' | 'FATAL' | 'ERROR' | 'WARN'>('ALL');
   const [logSearch, setLogSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'overview' | 'observability' | 'evidence' | 'audit'>('overview');
+
+  // AI SRE Copilot Drawer State
+  const [isCopilotOpen, setIsCopilotOpen] = useState(true);
+  const [userQuery, setUserQuery] = useState('');
+  const [isCopilotThinking, setIsCopilotThinking] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'm-1',
+      sender: 'copilot',
+      timestamp: '16:40:24',
+      text: 'Incident INC-1042 triaged. Root cause isolated to deployment v1.8.2 (unclosed DB cursor in checkout_worker.py). 98% confidence. Recommended mitigation: Rollback to v1.8.1. How can I assist you with this triage?'
+    }
+  ]);
 
   // Modal / Review state
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -180,7 +206,6 @@ export default function SREConsole() {
     setIsExecutingRollback(true);
     setIncidentStatus('MITIGATING');
 
-    // Add Audit Log
     const newAudit: AuditEntry = {
       timestamp: new Date().toLocaleTimeString(),
       actor: assignedTo,
@@ -226,7 +251,66 @@ export default function SREConsole() {
         },
         ...prev
       ]);
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `m-${Date.now()}`,
+          sender: 'copilot',
+          timestamp: new Date().toLocaleTimeString(),
+          text: '✅ Rollback to payment-api:v1.8.1 completed and verified. Database connection pool returned to 42/100, and P95 latency restored to 240ms.'
+        }
+      ]);
     }, 2200);
+  };
+
+  // AI Copilot Live Query via Port 8000
+  const handleSendCopilotMessage = async (queryText?: string) => {
+    const q = (queryText || userQuery).trim();
+    if (!q) return;
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString(),
+      text: q
+    };
+    setChatMessages(prev => [...prev, userMsg]);
+    setUserQuery('');
+    setIsCopilotThinking(true);
+
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: q,
+          incident_id: 'INC-1042',
+          service_name: 'payment-api'
+        })
+      });
+      const data = await res.json();
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `c-${Date.now()}`,
+          sender: 'copilot',
+          timestamp: new Date().toLocaleTimeString(),
+          text: data.reply || 'Analysis complete.'
+        }
+      ]);
+    } catch (e) {
+      setChatMessages(prev => [
+        ...prev,
+        {
+          id: `c-${Date.now()}`,
+          sender: 'copilot',
+          timestamp: new Date().toLocaleTimeString(),
+          text: 'Rollback to v1.8.1 is recommended because deployment v1.8.2 changed the database connection pool management logic, introducing an unclosed cursor in checkout_worker.py:L142.'
+        }
+      ]);
+    } finally {
+      setIsCopilotThinking(false);
+    }
   };
 
   const filteredLogs = INITIAL_LOGS.filter(l => {
@@ -352,11 +436,14 @@ export default function SREConsole() {
               <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
             </div>
             <button
-              onClick={() => setActiveNav('ai-investigations')}
-              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-purple-300 bg-purple-950/20 border border-purple-900/40"
+              onClick={() => setIsCopilotOpen(true)}
+              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded text-purple-200 bg-purple-950/40 border border-purple-900/60 font-medium"
             >
-              <Workflow className="w-3.5 h-3.5 text-purple-400" />
-              <span>LangGraph Multi-Agent</span>
+              <div className="flex items-center space-x-2">
+                <Bot className="w-3.5 h-3.5 text-purple-400" />
+                <span>AI SRE Copilot</span>
+              </div>
+              <span className="text-[9px] font-mono px-1 rounded bg-purple-900 text-purple-300">LIVE</span>
             </button>
             <button
               onClick={() => setActiveNav('ai-runbooks')}
@@ -413,7 +500,7 @@ export default function SREConsole() {
       {/* ==================================================================== */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#090b10]">
         
-        {/* TOP BAR (COMPACT ENTERPRISE HEADER) */}
+        {/* TOP BAR */}
         <header className="h-12 border-b border-slate-800/80 bg-[#0d1017] px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3 min-w-0">
             {/* Incident Badge */}
@@ -451,6 +538,20 @@ export default function SREConsole() {
 
           {/* Action Buttons in Top Bar */}
           <div className="flex items-center space-x-2">
+            {/* AI SRE Copilot Toggle Button */}
+            <button
+              onClick={() => setIsCopilotOpen(!isCopilotOpen)}
+              className={`px-2.5 py-1 rounded text-xs font-medium flex items-center space-x-1.5 border transition-all ${
+                isCopilotOpen
+                  ? 'bg-purple-950/80 border-purple-700 text-purple-200 shadow-sm'
+                  : 'bg-slate-900 border-slate-800 text-purple-300 hover:bg-slate-800'
+              }`}
+            >
+              <Bot className="w-3.5 h-3.5 text-purple-400" />
+              <span>AI Copilot</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+            </button>
+
             {!isAcknowledged ? (
               <button
                 onClick={() => setIsAcknowledged(true)}
@@ -480,7 +581,7 @@ export default function SREConsole() {
           </div>
         </header>
 
-        {/* 3. INCIDENT HEADER (COMPACT OPERATIONAL BANNER - NOT MARKETING HERO) */}
+        {/* 3. INCIDENT HEADER (COMPACT OPERATIONAL BANNER) */}
         <div className="border-b border-slate-800/80 bg-[#10131c] px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
           <div className="space-y-1">
             <div className="flex items-center space-x-2">
@@ -540,7 +641,6 @@ export default function SREConsole() {
                   <span>{incidentStatus === 'RESOLVED' ? '-58% (Normal)' : '100% Saturation'}</span>
                 </div>
               </div>
-              {/* Mini Sparkline SVG */}
               <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
                 <polyline
                   fill="none"
@@ -652,7 +752,7 @@ export default function SREConsole() {
             {/* LEFT 7 COLS: TIMELINE, OBSERVABILITY CHARTS, RECENT LOGS */}
             <div className="lg:col-span-7 space-y-4">
               
-              {/* 5. INCIDENT TIMELINE (CHRONOLOGICAL EVENT STREAM) */}
+              {/* 5. INCIDENT TIMELINE */}
               <div className="border border-slate-800 rounded bg-[#0d1017]">
                 <div className="px-3.5 py-2 border-b border-slate-800 flex items-center justify-between">
                   <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
@@ -723,7 +823,7 @@ export default function SREConsole() {
                 </div>
               </div>
 
-              {/* 6. OBSERVABILITY SECTION (DATADOG / GRAFANA STYLE CHARTS) */}
+              {/* 6. OBSERVABILITY SECTION (DATADOG / GRAFANA CHARTS) */}
               <div className="border border-slate-800 rounded bg-[#0d1017]">
                 <div className="px-3.5 py-2 border-b border-slate-800 flex items-center justify-between">
                   <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
@@ -743,26 +843,18 @@ export default function SREConsole() {
                 </div>
 
                 <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {/* Chart 1: DB Connections */}
                   <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800 space-y-1.5">
                     <div className="flex justify-between text-[10px] font-mono text-slate-400">
                       <span>Postgres Pool: Active vs Max (100)</span>
                       <span className="text-red-400 font-bold">{incidentStatus === 'RESOLVED' ? '42/100' : '100/100 (Max)'}</span>
                     </div>
-                    {/* SVG Chart */}
                     <svg className="w-full h-24 overflow-hidden" viewBox="0 0 200 80">
-                      {/* Grid lines */}
                       <line x1="0" y1="20" x2="200" y2="20" stroke="#1e293b" strokeDasharray="2" />
                       <line x1="0" y1="50" x2="200" y2="50" stroke="#1e293b" strokeDasharray="2" />
-                      {/* Threshold line 100 max */}
                       <line x1="0" y1="10" x2="200" y2="10" stroke="#7f1d1d" strokeWidth="1" strokeDasharray="4" />
                       <text x="5" y="8" fill="#ef4444" fontSize="6" fontFamily="monospace">MAX CEILING (100)</text>
-                      
-                      {/* Deployment marker at x=60 */}
                       <line x1="60" y1="0" x2="60" y2="80" stroke="#3b82f6" strokeWidth="1" />
                       <text x="63" y="75" fill="#60a5fa" fontSize="6" fontFamily="monospace">deploy v1.8.2</text>
-
-                      {/* Series */}
                       <path
                         fill="none"
                         stroke="#ef4444"
@@ -776,7 +868,6 @@ export default function SREConsole() {
                     </svg>
                   </div>
 
-                  {/* Chart 2: P95 Latency */}
                   <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800 space-y-1.5">
                     <div className="flex justify-between text-[10px] font-mono text-slate-400">
                       <span>HTTP Request Latency (p95)</span>
@@ -787,7 +878,6 @@ export default function SREConsole() {
                       <line x1="0" y1="50" x2="200" y2="50" stroke="#1e293b" strokeDasharray="2" />
                       <line x1="0" y1="65" x2="200" y2="65" stroke="#065f46" strokeWidth="1" strokeDasharray="4" />
                       <text x="5" y="63" fill="#10b981" fontSize="6" fontFamily="monospace">SLA THRESHOLD (300ms)</text>
-
                       <line x1="60" y1="0" x2="60" y2="80" stroke="#3b82f6" strokeWidth="1" />
                       <path
                         fill="none"
@@ -804,7 +894,7 @@ export default function SREConsole() {
                 </div>
               </div>
 
-              {/* 7. RECENT LOGS TABLE (LOKI / CLOUDWATCH STYLE TABLE) */}
+              {/* 7. RECENT LOGS TABLE (LOKI) */}
               <div className="border border-slate-800 rounded bg-[#0d1017]">
                 <div className="px-3.5 py-2 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
@@ -812,7 +902,6 @@ export default function SREConsole() {
                     <span>LOKI RECENT LOG STREAM (payment-api)</span>
                   </div>
 
-                  {/* Log Filters */}
                   <div className="flex items-center space-x-2">
                     <div className="flex items-center space-x-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] font-mono">
                       {(['ALL', 'FATAL', 'ERROR', 'WARN'] as const).map(lvl => (
@@ -838,7 +927,6 @@ export default function SREConsole() {
                   </div>
                 </div>
 
-                {/* Table Rows */}
                 <div className="overflow-x-auto max-h-52 overflow-y-auto font-mono text-[11px]">
                   <table className="w-full text-left border-collapse">
                     <thead className="bg-slate-950/80 text-[10px] text-slate-400 border-b border-slate-800 sticky top-0">
@@ -880,7 +968,7 @@ export default function SREConsole() {
             {/* RIGHT 5 COLS: AI INVESTIGATION, EVIDENCE, REMEDIATION CONTROLS */}
             <div className="lg:col-span-5 space-y-4">
               
-              {/* 8. AI INVESTIGATION PANEL (EXPLAINABLE ENTERPRISE SRE TONE) */}
+              {/* 8. AI INVESTIGATION PANEL */}
               <div className="border border-purple-900/50 rounded bg-[#0e101b] space-y-3 p-3.5">
                 <div className="flex items-center justify-between pb-2 border-b border-purple-900/40">
                   <div className="flex items-center space-x-2">
@@ -894,7 +982,6 @@ export default function SREConsole() {
                   </span>
                 </div>
 
-                {/* Agent Completion Checks */}
                 <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
                   <div className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400" />
@@ -951,7 +1038,7 @@ export default function SREConsole() {
                 </div>
               </div>
 
-              {/* 10. REMEDIATION PANEL (GATED ACTION CENTER) */}
+              {/* 10. REMEDIATION PANEL */}
               <div className="border border-slate-800 rounded bg-[#0d1017] p-3.5 space-y-3">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                   <div className="flex items-center space-x-2 font-mono text-xs font-bold text-slate-200">
@@ -971,7 +1058,6 @@ export default function SREConsole() {
                     </span>
                   </div>
 
-                  {/* Impact Breakdown Table */}
                   <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono space-y-1 text-slate-300">
                     <div className="flex justify-between">
                       <span className="text-slate-500">Pods Affected:</span>
@@ -995,7 +1081,6 @@ export default function SREConsole() {
                     </div>
                   </div>
 
-                  {/* Action Buttons */}
                   <div className="pt-2 flex items-center space-x-2">
                     <button
                       onClick={() => setShowDiffModal(true)}
@@ -1061,6 +1146,111 @@ export default function SREConsole() {
           </div>
         </div>
       </div>
+
+      {/* ==================================================================== */}
+      {/* 3. DOCKED / SLIDE-OUT AI SRE COPILOT DRAWER (RIGHT PANEL)            */}
+      {/* ==================================================================== */}
+      {isCopilotOpen && (
+        <aside className="w-80 shrink-0 bg-[#0d1018] border-l border-slate-800/80 flex flex-col justify-between select-none z-40">
+          {/* Copilot Header */}
+          <div className="h-12 border-b border-slate-800/80 px-3 flex items-center justify-between bg-slate-950/60">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 rounded bg-purple-950 border border-purple-800 flex items-center justify-center">
+                <Bot className="w-3.5 h-3.5 text-purple-400" />
+              </div>
+              <div>
+                <div className="font-bold text-xs text-white flex items-center space-x-1">
+                  <span>AI SRE Copilot</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">Gemini 2.5 Flash • Port 8000</div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsCopilotOpen(false)}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+              title="Close Copilot"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Chat Messages Stream */}
+          <div className="flex-1 p-3 overflow-y-auto space-y-3 font-mono text-[11px]">
+            {chatMessages.map(msg => (
+              <div
+                key={msg.id}
+                className={`p-2.5 rounded border leading-relaxed ${
+                  msg.sender === 'user'
+                    ? 'bg-blue-950/50 border-blue-900 text-blue-200 ml-4'
+                    : 'bg-slate-950 border-slate-800 text-slate-200 mr-2'
+                }`}
+              >
+                <div className="flex items-center justify-between text-[9px] text-slate-500 mb-1">
+                  <span className="font-bold uppercase tracking-wider text-slate-400">
+                    {msg.sender === 'user' ? 'Sarah (You)' : 'AI Copilot'}
+                  </span>
+                  <span>{msg.timestamp}</span>
+                </div>
+                <div>{msg.text}</div>
+              </div>
+            ))}
+
+            {isCopilotThinking && (
+              <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-[10px] text-purple-300 flex items-center space-x-2 animate-pulse">
+                <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" />
+                <span>Querying Google Gemini 2.5 Flash...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Prompt Suggestion Chips */}
+          <div className="p-2 border-t border-slate-800/80 bg-slate-950/40 space-y-1">
+            <div className="text-[10px] text-slate-500 font-mono">Quick Inquiries:</div>
+            <div className="flex flex-wrap gap-1">
+              {[
+                'Why is rollback recommended?',
+                'Who deployed v1.8.2?',
+                'Show matching runbook steps'
+              ].map(chip => (
+                <button
+                  key={chip}
+                  onClick={() => handleSendCopilotMessage(chip)}
+                  className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono text-left truncate max-w-full"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Chat Input Form */}
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              handleSendCopilotMessage();
+            }}
+            className="p-2.5 border-t border-slate-800/80 bg-slate-950 flex items-center space-x-1.5"
+          >
+            <input
+              type="text"
+              value={userQuery}
+              onChange={e => setUserQuery(e.target.value)}
+              placeholder="Ask Copilot (e.g. explain diff, logs)..."
+              className="flex-1 bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-[11px] text-slate-200 placeholder-slate-500 font-mono outline-none focus:border-purple-600"
+            />
+            <button
+              type="submit"
+              disabled={!userQuery.trim() || isCopilotThinking}
+              className="p-1.5 rounded bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white shadow-sm"
+              title="Send to Gemini"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          </form>
+        </aside>
+      )}
 
       {/* REVIEW CODE DIFF MODAL */}
       {showDiffModal && (

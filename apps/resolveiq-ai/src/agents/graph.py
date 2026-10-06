@@ -12,14 +12,14 @@ class LangGraphOrchestrator:
     """
 
     def __init__(self):
-        print("⚡ [LangGraphOrchestrator] Initialized multi-agent state graph pipeline.")
+        print("[ORCHESTRATOR] Initialized LangGraph multi-agent state graph pipeline.")
 
     async def run_investigation(self, initial_state: InvestigationState) -> InvestigationState:
         """
         Executes the LangGraph state machine sequentially across all specialized nodes.
         """
         print(f"\n====================================================================")
-        print(f"🚀 [LangGraph] Starting Investigation for {initial_state.get('incident_id')}...")
+        print(f"[LANGGRAPH] Starting Investigation for {initial_state.get('incident_id')}...")
         print(f"====================================================================")
 
         # Node 1: Classifier
@@ -35,10 +35,8 @@ class LangGraphOrchestrator:
         state = await synthesize_rca_node(state)
 
         print(f"====================================================================")
-        print(f"✅ [LangGraph] Investigation Pipeline Completed Successfully!")
+        print(f"[LANGGRAPH] Investigation Pipeline Completed Successfully!")
         print(f"====================================================================\n")
-
         return state
 
-# Singleton instance
 orchestrator = LangGraphOrchestrator()

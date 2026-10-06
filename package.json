@@ -1,0 +1,16 @@
+{
+  "name": "resolveiq",
+  "version": "1.0.0",
+  "description": "ResolveIQ - Autonomous SRE Incident & Operations Resolution Platform",
+  "private": true,
+  "scripts": {
+    "dev:api": "npm --prefix apps/resolveiq-api run dev",
+    "dev:web": "npm --prefix apps/resolveiq-web run dev",
+    "dev:ai": "cd apps/resolveiq-ai && python -m uvicorn src.server:app --port 8000 --reload",
+    "dev": "concurrently -n \"API:4000,WEB:3000,AI:8000\" -c \"blue,cyan,magenta\" \"npm run dev:api\" \"npm run dev:web\" \"npm run dev:ai\"",
+    "start": "npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

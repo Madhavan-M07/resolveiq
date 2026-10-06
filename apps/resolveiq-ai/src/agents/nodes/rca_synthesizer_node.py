@@ -29,7 +29,8 @@ async def synthesize_rca_node(state: InvestigationState) -> InvestigationState:
     if gemini_key:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+        model = genai.GenerativeModel(model_name)
 
         evidence_text = "\n".join([f"- [{e.get('type')}] {e.get('title')}: {e.get('description')}" for e in evidence_list])
         runbook_text = "\n".join([f"- {rb.get('title')} (Pinecone Score: {rb.get('pineconeScore')})" for rb in matched_runbooks])
@@ -76,25 +77,18 @@ async def synthesize_rca_node(state: InvestigationState) -> InvestigationState:
         )
 
         success = False
-        for attempt in range(2):
-            try:
-                response = model.generate_content(prompt)
-                clean_json = re.sub(r"^```(?:json)?|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
-                data = json.loads(clean_json)
+        try:
+            response = model.generate_content(prompt)
+            clean_json = re.sub(r"^```(?:json)?|```$", "", response.text.strip(), flags=re.MULTILINE).strip()
+            data = json.loads(clean_json)
 
-                state["root_cause"] = data.get("root_cause")
-                state["confidence_score"] = float(data.get("confidence_score", 0.94))
-                state["detailed_analysis"] = data.get("detailed_analysis")
-                state["remediation_plan"] = data.get("remediation_plan", [])
-                success = True
-                break
-            except Exception as e:
-                if "429" in str(e) and attempt == 0:
-                    print("[INFO] Gemini rate-limit (429) hit. Pausing 15s for free-tier window...")
-                    await asyncio.sleep(15)
-                    continue
-                print(f"[WARN] Gemini synthesis error: {e}. Falling back to default synthesis.")
-                break
+            state["root_cause"] = data.get("root_cause")
+            state["confidence_score"] = float(data.get("confidence_score", 0.94))
+            state["detailed_analysis"] = data.get("detailed_analysis")
+            state["remediation_plan"] = data.get("remediation_plan", [])
+            success = True
+        except Exception as e:
+            print(f"[WARN] Gemini synthesis error: {e}. Falling back to default synthesis.")
 
         if not success:
             state["root_cause"] = (

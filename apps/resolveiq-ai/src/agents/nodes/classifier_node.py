@@ -24,7 +24,8 @@ async def classify_incident_node(state: InvestigationState) -> InvestigationStat
     if gemini_key:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        model_name = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+        model = genai.GenerativeModel(model_name)
 
         prompt = (
             "You are an autonomous SRE incident triage AI.\n"
@@ -38,25 +39,18 @@ async def classify_incident_node(state: InvestigationState) -> InvestigationStat
         )
 
         success = False
-        for attempt in range(2):
-            try:
-                response = model.generate_content(prompt)
-                raw_text = response.text.strip()
-                clean_json = re.sub(r"^```(?:json)?|```$", "", raw_text, flags=re.MULTILINE).strip()
-                data = json.loads(clean_json)
-                domain = data.get("domain", "").upper()
-                if domain in ["DATABASE", "INFRASTRUCTURE", "NETWORK", "APPLICATION"]:
-                    incident_type = domain
-                    print(f"[Node 1: Classifier] Gemini Reasoning: {data.get('reasoning')}")
-                    success = True
-                    break
-            except Exception as e:
-                if "429" in str(e) and attempt == 0:
-                    print("[INFO] Gemini rate-limit (429) hit. Pausing 10s for free-tier window...")
-                    await asyncio.sleep(10)
-                    continue
-                print(f"[WARN] Gemini classification error: {e}. Falling back to heuristic classifier.")
-                break
+        try:
+            response = model.generate_content(prompt)
+            raw_text = response.text.strip()
+            clean_json = re.sub(r"^```(?:json)?|```$", "", raw_text, flags=re.MULTILINE).strip()
+            data = json.loads(clean_json)
+            domain = data.get("domain", "").upper()
+            if domain in ["DATABASE", "INFRASTRUCTURE", "NETWORK", "APPLICATION"]:
+                incident_type = domain
+                print(f"[Node 1: Classifier] Gemini Reasoning: {data.get('reasoning')}")
+                success = True
+        except Exception as e:
+            print(f"[WARN] Gemini classification error: {e}. Falling back to heuristic classifier.")
 
         if not success:
             eval_text = (f"{incident_id} {service_name} {description}").lower()

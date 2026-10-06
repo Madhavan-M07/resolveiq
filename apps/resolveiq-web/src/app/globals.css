@@ -1,67 +1,38 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 :root {
-  --background: #090d16;
-  --foreground: #f1f5f9;
+  --background: #fbfbfb;
+  --foreground: #09090b;
+}
+
+* {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
 }
 
 body {
-  background-color: #070a12;
-  color: #f1f5f9;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #fbfbfb;
+  color: #09090b;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Glassmorphism utilities */
-.glass-panel {
-  background: rgba(15, 23, 42, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.glass-panel-glow {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(56, 189, 248, 0.25);
-  box-shadow: 0 0 25px -5px rgba(56, 189, 248, 0.15);
-}
-
-.glass-panel-alert {
-  background: rgba(26, 12, 18, 0.85);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(244, 63, 94, 0.3);
-  box-shadow: 0 0 30px -5px rgba(244, 63, 94, 0.2);
-}
-
-/* Custom Scrollbars */
+/* Subtle modern scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.5);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(51, 65, 85, 0.8);
+  background: #e4e4e7;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 1);
-}
-
-@keyframes pulseGlow {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 25px rgba(34, 197, 94, 0.8);
-  }
-}
-
-.agent-active {
-  animation: pulseGlow 2s infinite ease-in-out;
+  background: #a1a1aa;
 }

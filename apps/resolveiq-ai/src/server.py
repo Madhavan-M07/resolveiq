@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,6 +11,7 @@ load_dotenv()
 
 from src.agents.state import InvestigationState
 from src.agents.graph import orchestrator
+from src.rag.pinecone_client import PineconeRAGClient
 
 app = FastAPI(title="ResolveIQ AI Brain", version="2.0.0")
 
@@ -20,6 +22,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Initialize Pinecone Vector Client
+rag_client = PineconeRAGClient()
 
 class InvestigateRequest(BaseModel):
     incident_id: str = "INC-1042"
@@ -37,8 +42,9 @@ def health():
     return {
         "status": "OK",
         "service": "resolveiq-ai",
-        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        "pinecone_index": os.getenv("PINECONE_INDEX_NAME", "resolveiq-knowledge")
+        "gemini_model": os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest"),
+        "pinecone_index": os.getenv("PINECONE_INDEX_NAME", "resolveiq-knowledge"),
+        "pinecone_connected": rag_client.is_connected
     }
 
 @app.post("/api/v1/investigate")
@@ -69,32 +75,98 @@ async def investigate(req: InvestigateRequest):
 
 @app.post("/api/v1/chat")
 async def chat(req: ChatRequest):
+    q_lower = req.query.strip().lower()
+    is_greeting = q_lower in {"hi", "hello", "hey", "hola", "greetings", "good morning", "good evening", "good afternoon"} or len(q_lower) <= 2
+
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
-    
-    try:
+    matched_docs = []
+
+    # 1. For technical queries, fetch relevant runbooks via Pinecone Vector Search (2.0s timeout)
+    if not is_greeting:
+        try:
+            matched_docs = await asyncio.wait_for(
+                asyncio.to_thread(rag_client.query_similar_documents, req.query, req.service_name, 2),
+                timeout=2.0
+            )
+        except Exception as e:
+            print(f"[WARN] Pinecone RAG lookup timed out or failed: {e}")
+            matched_docs = rag_client.knowledge_base_documents[:2]
+
+    doc_context = ""
+    if matched_docs:
+        doc_context = "\n".join([f"- [{d.get('id', 'doc')}] {d.get('title', '')}: {d.get('content', '')}" for d in matched_docs])
+
+    # 2. Call Google Gemini AI dynamically for ALL queries
+    if gemini_key:
         import google.generativeai as genai
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
 
-        prompt = f"""You are ResolveIQ AI SRE Copilot investigating production incident {req.incident_id} on service '{req.service_name}'.
-Incident Context:
-- Domain: DATABASE
-- Active connections: 100/100 saturation
-- P99 latency degraded to 4,820ms
-- Root cause: Deployment v1.8.2 (commit 8b7f3a1 by alex.dev) altered async connection pool batching, causing connection exhaustion.
-- Pinecone RAG matched: 'PostgreSQL Connection Pool Sizing & Exhaustion Runbook' (Score: 0.751).
-- Recommended action: Rollback to stable v1.8.1.
+        primary_model = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest")
+        candidate_models = [primary_model, "gemini-flash-latest"]
 
-User Question: {req.query}
+        if is_greeting:
+            prompt = f"""You are the ResolveIQ Autonomous AI SRE Copilot investigating production incident {req.incident_id} on microservice '{req.service_name}'.
+LIVE SITUATION: PostgreSQL Connection Pool Saturation (100/100 connections), P95 latency degraded to 4.82s (+1,908%) following deployment v1.8.2.
 
-Answer concisely, technically accurate, and helpfully as an expert SRE in 2-3 sentences.
-"""
-        response = model.generate_content(prompt)
-        return {"reply": response.text.strip()}
-    except Exception as e:
-        return {"reply": f"Gemini Analysis: Root cause on {req.service_name} is connection pool exhaustion caused by regression in deployment v1.8.2. Rollback to v1.8.1 is recommended to restore SLA. ({e})"}
+USER GREETING:
+{req.query}
+
+INSTRUCTIONS:
+Respond authoritatively and concisely as the SRE AI Copilot in 1-2 sentences. Greet the engineer, mention the active incident ({req.incident_id} on {req.service_name}), and ask how you can assist."""
+        else:
+            prompt = f"""You are the ResolveIQ Autonomous AI SRE Copilot investigating production incident {req.incident_id} on microservice '{req.service_name}'.
+
+LIVE OPERATIONAL TELEMETRY & CONTEXT:
+- Domain: PostgreSQL Connection Pool Saturation
+- Cluster: prod-us-east-2 (AWS RDS Multi-AZ)
+- Current Metrics: 100/100 active connections (ceiling reached), 4.82s P95 latency (+1,908% spike), 31.4% HTTP 504 Gateway Timeouts
+- Git Deploy Metadata: Commit 8b7f3a1 by alex.dev ('chore(db): migrate to async connection pool batching') deployed 35 mins ago
+- Root Cause: Unclosed database cursor in async worker (checkout_worker.py:L142) leaking active connections
+- Recommended Remediation: Immediate automated rollback of payment-api v1.8.2 -> v1.8.1
+
+RELEVANT PINECONE VECTOR RUNBOOKS:
+{doc_context if doc_context else "No direct runbook match."}
+
+ENGINEER'S QUESTION:
+{req.query}
+
+INSTRUCTIONS:
+Provide an authoritative, technical, concise SRE diagnosis in 2-3 sentences. Cite specific metrics, commit hashes, or runbook steps where relevant. Do not include meta commentary or API error notices."""
+
+        def _call_gemini(m_name: str) -> Optional[str]:
+            m = genai.GenerativeModel(m_name)
+            resp = m.generate_content(prompt)
+            if resp and resp.text:
+                return resp.text.strip()
+            return None
+
+        for model_name in candidate_models:
+            try:
+                reply_text = await asyncio.wait_for(
+                    asyncio.to_thread(_call_gemini, model_name),
+                    timeout=5.0
+                )
+                if reply_text:
+                    return {
+                        "reply": reply_text,
+                        "source": f"Live Gemini AI ({model_name})" + (" + Pinecone RAG" if matched_docs else ""),
+                        "pinecone_matches": [d.get("id") for d in matched_docs if d.get("id")]
+                    }
+            except Exception as e:
+                print(f"[WARN] Gemini model {model_name} failed: {e}")
+                continue
+
+    # 3. Fallback only if Gemini network is disconnected
+    fallback_text = (
+        f"Hello! I am ResolveIQ AI Copilot monitoring incident {req.incident_id} on {req.service_name}. How can I assist you with the triage?"
+        if is_greeting else
+        f"Incident {req.incident_id} analysis on {req.service_name}: Deployment v1.8.2 (commit 8b7f3a1) introduced an unclosed cursor in checkout_worker.py:L142, saturating active connections at 100/100. Recommend immediate rollback to v1.8.1."
+    )
+    return {
+        "reply": fallback_text,
+        "source": "Local Fallback",
+        "pinecone_matches": [d.get("id") for d in matched_docs if d.get("id")]
+    }
 
 if __name__ == "__main__":
     import uvicorn

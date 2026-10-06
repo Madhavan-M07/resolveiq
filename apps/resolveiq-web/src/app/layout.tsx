@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ResolveIQ - Autonomous SRE Incident Command Center",
-  description: "Enterprise Autonomous Incident Resolution Platform powered by LangGraph, Pinecone RAG, and Human-in-the-Loop controls",
+  title: "ResolvIQ - Enterprise SRE Incident Console",
+  description: "Autonomous SRE Incident Resolution Platform powered by LangGraph, Pinecone RAG, and Human-in-the-Loop controls",
 };
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-[#070a12] text-slate-100 min-h-screen antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+    <html lang="en">
+      <body className="bg-slate-50 text-slate-900 min-h-screen antialiased">
         {children}
       </body>
     </html>

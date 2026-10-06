@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  AlertTriangle,
   AlertCircle,
   CheckCircle2,
   Clock,
   ArrowRight,
-  Flame,
   RotateCcw,
-  Sparkles,
-  ShieldCheck,
+  ShieldAlert,
   Server,
   Activity,
   Layers,
@@ -18,722 +17,1091 @@ import {
   ChevronUp,
   Play,
   TrendingDown,
+  TrendingUp,
   Lock,
   GitBranch,
   Database,
-  Send,
-  MessageSquare,
-  Bot,
+  Search,
+  Bell,
+  Settings,
+  Terminal,
+  Cpu,
+  BarChart2,
+  ListFilter,
+  ExternalLink,
+  Users,
+  Compass,
+  GitCommit,
   Radio,
-  Wifi
+  Workflow,
+  Check,
+  RefreshCw,
+  Code2,
+  Sliders,
+  Filter,
+  Download,
+  Share2,
+  Maximize2
 } from 'lucide-react';
 
-interface NetworkLog {
+// ============================================================================
+// Types & Sample Telemetry Data
+// ============================================================================
+
+interface LogRow {
   id: string;
-  method: string;
-  url: string;
-  status: number | string;
-  durationMs: number;
   timestamp: string;
+  level: 'FATAL' | 'ERROR' | 'WARN' | 'INFO';
+  pod: string;
+  message: string;
 }
 
-interface Scenario {
-  id: string;
-  name: string;
-  service: string;
-  severity: string;
-  problem: string;
-  rootCause: string;
-  recommendedAction: string;
-  nominalConnections: string;
-  failingConnections: string;
-  nominalLatency: string;
-  failingLatency: string;
-}
-
-const SCENARIOS: Scenario[] = [
+const INITIAL_LOGS: LogRow[] = [
   {
-    id: 'db-pool',
-    name: 'PostgreSQL Pool Exhaustion',
-    service: 'payment-api',
-    severity: 'SEV-1 Critical',
-    problem: 'Active client connections reached maximum ceiling (100/100). 504 timeouts on checkout.',
-    rootCause: 'Deployment v1.8.2 introduced an unclosed database cursor in async batch worker.',
-    recommendedAction: 'Rollback payment-api to v1.8.1',
-    nominalConnections: '42 / 100',
-    failingConnections: '100 / 100 (Full)',
-    nominalLatency: '240 ms',
-    failingLatency: '4,820 ms'
+    id: 'l-1',
+    timestamp: '16:38:15.221',
+    level: 'FATAL',
+    pod: 'payment-api-7d9f-x4k2',
+    message: 'PG::ConnectionBad: remaining connection slots are reserved for non-replication superusers'
   },
   {
-    id: 'memory-leak',
-    name: 'Pod OOM Memory Leak',
-    service: 'order-api',
-    severity: 'SEV-2 Major',
-    problem: 'Node heap memory exceeded 98% cgroup threshold. Pods being OOMKilled by Kubernetes.',
-    rootCause: 'Unbounded in-memory event caching introduced in recent release v2.4.0.',
-    recommendedAction: 'Restart Pod Replicas & Revert v2.4.0',
-    nominalConnections: '35 / 100',
-    failingConnections: '92 / 100',
-    nominalLatency: '180 ms',
-    failingLatency: '2,940 ms'
+    id: 'l-2',
+    timestamp: '16:38:12.890',
+    level: 'ERROR',
+    pod: 'payment-api-7d9f-x4k2',
+    message: 'Timeout acquiring database connection from pool after 5000ms. Active: 100/100, Queue: 842'
   },
   {
-    id: 'redis-cache',
-    name: 'Redis Eviction Storm',
-    service: 'auth-service',
-    severity: 'SEV-2 Major',
-    problem: 'Redis maxmemory-policy eviction storm causing cache stampede on primary Postgres DB.',
-    rootCause: 'Session TTL was removed in hotfix patch, preventing automatic cache eviction.',
-    recommendedAction: 'Flush Expired Keys & Restore TTL',
-    nominalConnections: '28 / 100',
-    failingConnections: '85 / 100',
-    nominalLatency: '95 ms',
-    failingLatency: '1,780 ms'
+    id: 'l-3',
+    timestamp: '16:38:05.114',
+    level: 'ERROR',
+    pod: 'payment-api-7d9f-9a1c',
+    message: 'ActiveRecord::ConnectionTimeoutError: could not obtain a connection from the pool within 5.000 seconds'
+  },
+  {
+    id: 'l-4',
+    timestamp: '16:37:58.742',
+    level: 'WARN',
+    pod: 'payment-api-7d9f-9a1c',
+    message: 'Active connections reached pool limit (95/100). Connection acquisition latency: 3,420ms'
+  },
+  {
+    id: 'l-5',
+    timestamp: '16:37:32.401',
+    level: 'WARN',
+    pod: 'payment-api-7d9f-3m7b',
+    message: 'Async pool client checkout_worker.py:142 unreleased connection detected after job timeout'
+  },
+  {
+    id: 'l-6',
+    timestamp: '16:36:40.512',
+    level: 'INFO',
+    pod: 'payment-api-7d9f-3m7b',
+    message: 'HTTP POST /v1/charges 504 Gateway Timeout duration_ms=5002 client_ip=10.244.3.18'
+  },
+  {
+    id: 'l-7',
+    timestamp: '16:35:10.004',
+    level: 'INFO',
+    pod: 'payment-api-7d9f-x4k2',
+    message: 'Deployment payment-api:v1.8.2 healthcheck probe passing. Replicas: 12/12 ready'
   }
 ];
 
-export default function ResolveIQDashboard() {
-  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
-  const [incidentState, setIncidentState] = useState<'CRITICAL' | 'RESOLVING' | 'RESOLVED'>('CRITICAL');
-  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
-  const [actionProgress, setActionProgress] = useState<string>('');
+interface AuditEntry {
+  timestamp: string;
+  actor: string;
+  action: string;
+  target: string;
+  result: 'SUCCESS' | 'PENDING' | 'DENIED';
+}
 
-  // Live Services Health
-  const [apiGatewayOnline, setApiGatewayOnline] = useState<boolean>(false);
-  const [aiBrainOnline, setAiBrainOnline] = useState<boolean>(false);
+export default function SREConsole() {
+  // Navigation & View state
+  const [activeNav, setActiveNav] = useState('incidents-active');
+  const [incidentStatus, setIncidentStatus] = useState<'INVESTIGATING' | 'MITIGATING' | 'RESOLVED'>('INVESTIGATING');
+  const [isExecutingRollback, setIsExecutingRollback] = useState(false);
+  const [selectedLogFilter, setSelectedLogFilter] = useState<'ALL' | 'FATAL' | 'ERROR' | 'WARN'>('ALL');
+  const [logSearch, setLogSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'overview' | 'observability' | 'evidence' | 'audit'>('overview');
 
-  // Network Calls Audit Log
-  const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
+  // Modal / Review state
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [isAcknowledged, setIsAcknowledged] = useState(false);
+  const [assignedTo, setAssignedTo] = useState('Sarah Chen (Lead SRE)');
 
-  const addNetworkLog = (method: string, url: string, status: number | string, durationMs: number) => {
-    const newLog: NetworkLog = {
-      id: `log-${Date.now()}-${Math.random()}`,
-      method,
-      url,
-      status,
-      durationMs,
-      timestamp: new Date().toLocaleTimeString()
-    };
-    setNetworkLogs(prev => [newLog, ...prev.slice(0, 7)]);
-  };
+  // Real API Gateway & AI Brain health
+  const [apiGatewayOnline, setApiGatewayOnline] = useState(false);
+  const [aiBrainOnline, setAiBrainOnline] = useState(false);
 
-  // AI Chat Assistant State
-  const [userQuery, setUserQuery] = useState('');
-  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
+  // Audit Log state
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([
     {
-      sender: 'ai',
-      text: 'Hello! I am your live AI SRE Copilot running on port 8000 with Google Gemini 2.5 Flash and Pinecone. Ask me anything about this outage!'
+      timestamp: '16:39:15',
+      actor: 'system (LangGraph)',
+      action: 'INITIATE_INVESTIGATION',
+      target: 'INC-1042',
+      result: 'SUCCESS'
+    },
+    {
+      timestamp: '16:39:00',
+      actor: 'pagerduty-webhook',
+      action: 'DECLARE_INCIDENT',
+      target: 'INC-1042 (SEV-1)',
+      result: 'SUCCESS'
+    },
+    {
+      timestamp: '16:34:10',
+      actor: 'alex.dev (ArgoCD)',
+      action: 'DEPLOY_RELEASE',
+      target: 'payment-api:v1.8.2',
+      result: 'SUCCESS'
     }
   ]);
-  const [isAiReplying, setIsAiReplying] = useState(false);
 
-  // Initial Load: Ping backend on 4000 and AI service on 8000
+  // Initial Health Check
   useEffect(() => {
     const checkServices = async () => {
-      // 1. Fetch Backend on 4000
-      const startApi = Date.now();
       try {
-        const res = await fetch('http://localhost:4000/api/v1/incidents');
-        addNetworkLog('GET', 'http://localhost:4000/api/v1/incidents', res.status, Date.now() - startApi);
+        const res = await fetch('http://localhost:4000/health');
         if (res.ok) setApiGatewayOnline(true);
-      } catch (e) {
-        addNetworkLog('GET', 'http://localhost:4000/api/v1/incidents', 'ERR', Date.now() - startApi);
-      }
+      } catch (e) {}
 
-      // 2. Fetch AI Brain on 8000
-      const startAi = Date.now();
       try {
         const res = await fetch('http://localhost:8000/health');
-        addNetworkLog('GET', 'http://localhost:8000/health', res.status, Date.now() - startAi);
         if (res.ok) setAiBrainOnline(true);
-      } catch (e) {
-        addNetworkLog('GET', 'http://localhost:8000/health', 'ERR', Date.now() - startAi);
-      }
+      } catch (e) {}
     };
-
     checkServices();
   }, []);
 
-  // Handle Scenario Switch
-  const handleSelectScenario = async (scenario: Scenario) => {
-    setSelectedScenario(scenario);
-    setIncidentState('CRITICAL');
-    setActionProgress('');
-    
-    // Call live AI investigation endpoint on Port 8000
-    const startAi = Date.now();
-    try {
-      const res = await fetch('http://localhost:8000/api/v1/investigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          incident_id: `INC-${Math.floor(Math.random() * 9000 + 1000)}`,
-          service_name: scenario.service,
-          description: scenario.problem
-        })
-      });
-      addNetworkLog('POST', 'http://localhost:8000/api/v1/investigate', res.status, Date.now() - startAi);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:8000/api/v1/investigate', 'ERR', Date.now() - startAi);
-    }
-
-    setChatMessages([
-      {
-        sender: 'ai',
-        text: `Switched context to ${scenario.name} on ${scenario.service}. Live AI investigation completed on port 8000. How can I assist you?`
-      }
-    ]);
-  };
-
-  // Handle Rollback Approval (Real POST to Port 4000)
+  // Rollback Action Execution
   const handleApproveRollback = async () => {
-    setIncidentState('RESOLVING');
-    setActionProgress('Sending approval to Backend Gateway (Port 4000)...');
-    
-    const startApprove = Date.now();
+    setIsExecutingRollback(true);
+    setIncidentStatus('MITIGATING');
+
+    // Add Audit Log
+    const newAudit: AuditEntry = {
+      timestamp: new Date().toLocaleTimeString(),
+      actor: assignedTo,
+      action: 'APPROVE_ROLLBACK',
+      target: 'payment-api:v1.8.2 -> v1.8.1',
+      result: 'SUCCESS'
+    };
+    setAuditLogs(prev => [newAudit, ...prev]);
+
     try {
-      const resApprove = await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', {
+      await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           incidentId: 'INC-1042',
           actionId: 'rem-1',
-          approvedBy: 'sarah.sre@acme.internal',
-          rationale: 'Human approved automated rollback to v1.8.1 to restore checkout availability.'
+          approvedBy: assignedTo,
+          rationale: 'Approved rollback of payment-api v1.8.2 to mitigate connection leak.'
         })
       });
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', resApprove.status, Date.now() - startApprove);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/approve', 'ERR', Date.now() - startApprove);
-    }
 
-    setActionProgress(`Reverting ${selectedScenario.service} deployment via Backend API...`);
-
-    const startExec = Date.now();
-    try {
-      const resExec = await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', {
+      await fetch('http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           incidentId: 'INC-1042',
           actionId: 'rem-1',
-          idempotencyKey: `idemp-${Date.now()}`
+          idempotencyKey: `exec-${Date.now()}`
         })
       });
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', resExec.status, Date.now() - startExec);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/incidents/INC-1042/remediation/execute', 'ERR', Date.now() - startExec);
-    }
+    } catch (e) {}
 
     setTimeout(() => {
-      setIncidentState('RESOLVED');
-      setActionProgress('');
-      setChatMessages(prev => [
-        ...prev,
+      setIsExecutingRollback(false);
+      setIncidentStatus('RESOLVED');
+      setAuditLogs(prev => [
         {
-          sender: 'ai',
-          text: `✅ Action executed! Verified with Backend Gateway. ${selectedScenario.service} has been rolled back and nominal metrics restored.`
-        }
+          timestamp: new Date().toLocaleTimeString(),
+          actor: 'k8s-operator',
+          action: 'DEPLOYMENT_ROLLOUT_SUCCESS',
+          target: 'payment-api:v1.8.1',
+          result: 'SUCCESS'
+        },
+        ...prev
       ]);
-    }, 1200);
+    }, 2200);
   };
 
-  // Handle Asking Live Google Gemini on Port 8000
-  const handleSendMessage = async (textToSend?: string) => {
-    const q = (textToSend || userQuery).trim();
-    if (!q) return;
-
-    const newMessages = [...chatMessages, { sender: 'user' as const, text: q }];
-    setChatMessages(newMessages);
-    setUserQuery('');
-    setIsAiReplying(true);
-
-    const startChat = Date.now();
-    try {
-      const res = await fetch('http://localhost:8000/api/v1/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: q,
-          incident_id: 'INC-1042',
-          service_name: selectedScenario.service
-        })
-      });
-      addNetworkLog('POST', 'http://localhost:8000/api/v1/chat', res.status, Date.now() - startChat);
-      
-      const data = await res.json();
-      setChatMessages(prev => [...prev, { sender: 'ai', text: data.reply || 'Analysis complete.' }]);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:8000/api/v1/chat', 'ERR', Date.now() - startChat);
-      setChatMessages(prev => [
-        ...prev,
-        {
-          sender: 'ai',
-          text: `Gemini Fallback: Rollback on ${selectedScenario.service} is recommended because deployment v1.8.2 changed the database connection pool management logic.`
-        }
-      ]);
-    } finally {
-      setIsAiReplying(false);
-    }
-  };
-
-  // Handle Simulate Outage (Real POST to Port 4000)
-  const handleSimulateOutage = async () => {
-    setIncidentState('CRITICAL');
-    setActionProgress('');
-    const start = Date.now();
-    try {
-      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenarioId: 'scenario-db-pool-exhaustion' })
-      });
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/trigger', res.status, Date.now() - start);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/trigger', 'ERR', Date.now() - start);
-    }
-  };
-
-  // Handle Reset Demo (Real POST to Port 4000)
-  const handleResetDemo = async () => {
-    setIncidentState('RESOLVED');
-    const start = Date.now();
-    try {
-      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/reset', {
-        method: 'POST'
-      });
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/reset', res.status, Date.now() - start);
-    } catch (e) {
-      addNetworkLog('POST', 'http://localhost:4000/api/v1/sandbox/scenarios/reset', 'ERR', Date.now() - start);
-    }
-  };
+  const filteredLogs = INITIAL_LOGS.filter(l => {
+    if (selectedLogFilter !== 'ALL' && l.level !== selectedLogFilter) return false;
+    if (logSearch && !l.message.toLowerCase().includes(logSearch.toLowerCase())) return false;
+    return true;
+  });
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30">
+    <div className="flex h-screen w-screen bg-[#090b10] text-slate-200 font-sans text-xs overflow-hidden select-none">
       
-      {/* 1. TOP HEADER WITH REAL-TIME SERVICE INDICATORS */}
-      <header className="border-b border-slate-800/80 bg-[#0d1322] px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-0 z-30">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Sparkles className="w-5 h-5 text-white" />
-          </div>
-          <div>
+      {/* ==================================================================== */}
+      {/* 1. LEFT SIDEBAR (ENTERPRISE OPERATIONAL NAVIGATION)                  */}
+      {/* ==================================================================== */}
+      <aside className="w-56 shrink-0 bg-[#0c0e15] border-r border-slate-800/80 flex flex-col justify-between select-none">
+        <div className="flex flex-col">
+          {/* Logo & Tenant Header */}
+          <div className="h-12 border-b border-slate-800/80 px-3.5 flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <span className="text-xl font-bold tracking-tight text-white">ResolveIQ</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-medium">
-                Live Cloud Stack
-              </span>
+              <div className="w-6 h-6 rounded bg-gradient-to-tr from-cyan-600 to-blue-600 flex items-center justify-center font-bold text-white text-[11px] shadow-sm">
+                R
+              </div>
+              <span className="font-bold tracking-tight text-white text-sm">ResolvIQ</span>
+              <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-800 text-slate-400">SRE</span>
             </div>
-            <div className="flex items-center space-x-3 text-[11px] font-mono mt-0.5">
-              <span className="flex items-center space-x-1">
-                <span className={`w-2 h-2 rounded-full ${apiGatewayOnline ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-                <span className="text-slate-400">Backend API (4000):</span>
-                <strong className={apiGatewayOnline ? 'text-emerald-400' : 'text-amber-400'}>
-                  {apiGatewayOnline ? 'ONLINE' : 'CONNECTING'}
-                </strong>
-              </span>
-              <span className="text-slate-600">|</span>
-              <span className="flex items-center space-x-1">
-                <span className={`w-2 h-2 rounded-full ${aiBrainOnline ? 'bg-cyan-400 animate-pulse' : 'bg-amber-400'}`} />
-                <span className="text-slate-400">AI Brain (8000):</span>
-                <strong className={aiBrainOnline ? 'text-cyan-400' : 'text-amber-400'}>
-                  {aiBrainOnline ? 'ONLINE' : 'CONNECTING'}
-                </strong>
-              </span>
+            <div className="w-2 h-2 rounded-full bg-emerald-500" title="Connected to Neon AWS Postgres" />
+          </div>
+
+          {/* Org & Cluster Dropdown */}
+          <div className="px-3 py-2 border-b border-slate-800/60 bg-slate-950/40">
+            <div className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Workspace / Cluster</div>
+            <div className="flex items-center justify-between mt-0.5 text-slate-300 font-medium">
+              <span className="truncate">acme-prod-us-east-2</span>
+              <ChevronDown className="w-3 h-3 text-slate-500" />
             </div>
+          </div>
+
+          {/* Nav Links */}
+          <nav className="p-2 space-y-0.5 overflow-y-auto">
+            <div className="px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+              Operational Command
+            </div>
+            <button
+              onClick={() => setActiveNav('dashboard')}
+              className={`w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-left transition-colors ${
+                activeNav === 'dashboard' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-slate-400" />
+              <span>Overview Dashboard</span>
+            </button>
+
+            {/* Incidents Group */}
+            <div className="pt-2 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+              Incidents & Triage
+            </div>
+            <button
+              onClick={() => setActiveNav('incidents-active')}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-left transition-colors ${
+                activeNav === 'incidents-active' ? 'bg-red-950/40 border border-red-800/50 text-red-200 font-medium' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                <span>Active Incidents</span>
+              </div>
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-red-900/80 text-red-200 font-bold">1</span>
+            </button>
+
+            <button
+              onClick={() => setActiveNav('incidents-history')}
+              className={`w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-left transition-colors ${
+                activeNav === 'incidents-history' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Incident History</span>
+            </button>
+
+            {/* Services Group */}
+            <div className="pt-2 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+              Service Catalog
+            </div>
+            <button
+              onClick={() => setActiveNav('services')}
+              className={`w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-left transition-colors ${
+                activeNav === 'services' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5 text-slate-400" />
+              <span>Services (24)</span>
+            </button>
+
+            {/* Observability Group */}
+            <div className="pt-2 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+              Observability
+            </div>
+            <button
+              onClick={() => setActiveNav('metrics')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <BarChart2 className="w-3.5 h-3.5 text-slate-400" />
+              <span>Prometheus Metrics</span>
+            </button>
+            <button
+              onClick={() => setActiveNav('logs')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <Terminal className="w-3.5 h-3.5 text-slate-400" />
+              <span>Loki Logs Stream</span>
+            </button>
+            <button
+              onClick={() => setActiveNav('traces')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <Compass className="w-3.5 h-3.5 text-slate-400" />
+              <span>Distributed Traces</span>
+            </button>
+
+            {/* AI Assistant Group */}
+            <div className="pt-2 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-purple-400 font-semibold flex items-center justify-between">
+              <span>AI Investigation</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+            </div>
+            <button
+              onClick={() => setActiveNav('ai-investigations')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-purple-300 bg-purple-950/20 border border-purple-900/40"
+            >
+              <Workflow className="w-3.5 h-3.5 text-purple-400" />
+              <span>LangGraph Multi-Agent</span>
+            </button>
+            <button
+              onClick={() => setActiveNav('ai-runbooks')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <span>Pinecone Runbooks</span>
+            </button>
+
+            {/* Infrastructure */}
+            <div className="pt-2 px-2 py-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 font-semibold">
+              Infrastructure
+            </div>
+            <button
+              onClick={() => setActiveNav('k8s')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              <span>Kubernetes Workloads</span>
+            </button>
+            <button
+              onClick={() => setActiveNav('databases')}
+              className="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            >
+              <Database className="w-3.5 h-3.5 text-slate-400" />
+              <span>Postgres & Locks</span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Bottom Node Health Status */}
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950/60 font-mono text-[10px] space-y-1.5">
+          <div className="flex items-center justify-between text-slate-400">
+            <span>API Gateway (4000):</span>
+            <span className={apiGatewayOnline ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
+              {apiGatewayOnline ? 'ONLINE' : 'CONNECTING'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-slate-400">
+            <span>AI Brain (8000):</span>
+            <span className={aiBrainOnline ? 'text-purple-400 font-bold' : 'text-amber-400'}>
+              {aiBrainOnline ? 'ONLINE' : 'CONNECTING'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-slate-400">
+            <span>Pinecone Index:</span>
+            <span className="text-cyan-400 font-bold truncate max-w-[90px]">resolveiq</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* ==================================================================== */}
+      {/* 2. MAIN CONSOLE WORKSPACE                                            */}
+      {/* ==================================================================== */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-[#090b10]">
+        
+        {/* TOP BAR (COMPACT ENTERPRISE HEADER) */}
+        <header className="h-12 border-b border-slate-800/80 bg-[#0d1017] px-4 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-3 min-w-0">
+            {/* Incident Badge */}
+            <div className="flex items-center space-x-1.5 font-mono">
+              <span className="px-2 py-0.5 rounded bg-red-950 text-red-300 border border-red-800 text-[11px] font-bold">
+                SEV-1
+              </span>
+              <span className="text-white font-bold text-xs">INC-1042</span>
+            </div>
+
+            <div className="h-4 w-px bg-slate-800" />
+
+            {/* Context Breadcrumb */}
+            <div className="flex items-center space-x-1.5 text-xs text-slate-400">
+              <span className="text-slate-500">Env:</span>
+              <strong className="text-slate-200 font-mono">prod-us-east-2</strong>
+              <span className="text-slate-600">/</span>
+              <span className="text-slate-500">Service:</span>
+              <strong className="text-cyan-400 font-mono">payment-api</strong>
+              <span className="text-slate-600">/</span>
+              <span className="text-slate-500">Duration:</span>
+              <span className="font-mono text-amber-300 font-bold">14m 28s</span>
+            </div>
+
+            {/* Global Search Bar */}
+            <div className="hidden lg:flex items-center space-x-1.5 ml-4 px-2.5 py-1 rounded bg-slate-900 border border-slate-800 text-slate-400 text-xs">
+              <Search className="w-3 h-3 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search metrics, logs, runbooks... (Ctrl+K)"
+                className="bg-transparent border-none outline-none text-slate-200 placeholder-slate-500 w-56 text-[11px]"
+              />
+            </div>
+          </div>
+
+          {/* Action Buttons in Top Bar */}
+          <div className="flex items-center space-x-2">
+            {!isAcknowledged ? (
+              <button
+                onClick={() => setIsAcknowledged(true)}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium flex items-center space-x-1"
+              >
+                <Check className="w-3 h-3 text-slate-400" />
+                <span>Acknowledge</span>
+              </button>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-emerald-950/60 border border-emerald-800 text-emerald-400 text-[11px] font-mono">
+                ACK by Sarah Chen
+              </span>
+            )}
+
+            <div className="flex items-center space-x-1 px-2 py-1 rounded bg-slate-900 border border-slate-800 text-slate-300 text-xs font-mono">
+              <Users className="w-3 h-3 text-slate-500" />
+              <span>Assignee: {assignedTo.split(' ')[0]}</span>
+            </div>
+
+            <button
+              onClick={() => alert('War Room meeting opened: https://meet.google.com/resolveiq-war-room')}
+              className="px-2.5 py-1 rounded bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-200 text-xs font-medium flex items-center space-x-1"
+            >
+              <ExternalLink className="w-3 h-3 text-indigo-400" />
+              <span>War Room</span>
+            </button>
+          </div>
+        </header>
+
+        {/* 3. INCIDENT HEADER (COMPACT OPERATIONAL BANNER - NOT MARKETING HERO) */}
+        <div className="border-b border-slate-800/80 bg-[#10131c] px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0">
+          <div className="space-y-1">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+              <h1 className="text-sm font-bold text-white tracking-tight">
+                PostgreSQL Connection Pool Exhaustion & 504 Timeout Cascade — payment-api
+              </h1>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400 font-mono">
+              <span>Status: <strong className={incidentStatus === 'RESOLVED' ? 'text-emerald-400' : 'text-red-400'}>{incidentStatus}</strong></span>
+              <span>Trigger: <strong className="text-slate-300">Prometheus AlertManager</strong></span>
+              <span>Started: <strong className="text-slate-300">16:34:10 UTC (Today)</strong></span>
+              <span>Cluster: <strong className="text-slate-300">k8s-prod-us-east-2</strong></span>
+              <span>Slack: <strong className="text-blue-400">#incident-1042-payment</strong></span>
+            </div>
+          </div>
+
+          {/* Quick Tab Switcher */}
+          <div className="flex items-center space-x-1 bg-slate-900/80 p-0.5 rounded border border-slate-800 text-xs">
+            {[
+              { id: 'overview', label: 'Triage Overview' },
+              { id: 'observability', label: 'Metrics & Charts' },
+              { id: 'evidence', label: 'Root Cause & Evidence' },
+              { id: 'audit', label: 'Audit Trail' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                  activeTab === tab.id ? 'bg-slate-800 text-white shadow-sm font-semibold' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Demo Controls Bar */}
-        <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
-          <span className="text-xs text-slate-400 font-medium hidden md:inline">Trigger Demo:</span>
-          
-          <button
-            onClick={handleSimulateOutage}
-            className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center space-x-1.5 transition-all"
-          >
-            <Flame className="w-3.5 h-3.5 text-rose-400" />
-            <span>Simulate Outage</span>
-          </button>
+        {/* 4. SCROLLABLE SRE WORKSPACE */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
 
-          <button
-            onClick={handleResetDemo}
-            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-semibold flex items-center space-x-1.5 transition-all"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Reset Demo</span>
-          </button>
-        </div>
-      </header>
+          {/* KPI ROW (6 COMPACT REAL METRIC CARDS) */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {/* Metric 1 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-red-900/40 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>DB CONNECTIONS</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-red-400">
+                  {incidentStatus === 'RESOLVED' ? '42 / 100' : '100 / 100'}
+                </div>
+                <div className="text-[10px] text-red-400 font-mono flex items-center space-x-1">
+                  <TrendingUp className="w-3 h-3" />
+                  <span>{incidentStatus === 'RESOLVED' ? '-58% (Normal)' : '100% Saturation'}</span>
+                </div>
+              </div>
+              {/* Mini Sparkline SVG */}
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="2"
+                  points={incidentStatus === 'RESOLVED' ? '0,18 20,16 40,14 60,15 80,10 100,8' : '0,15 20,12 40,8 60,3 80,2 100,2'}
+                />
+              </svg>
+            </div>
 
-      {/* 2. SCENARIO SELECTOR BAR */}
-      <div className="bg-[#0e1424] border-b border-slate-800 px-6 py-2.5">
-        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <span className="text-xs text-slate-400 font-medium">
-            🎯 <strong>Select Outage Scenario to Test AI:</strong>
-          </span>
+            {/* Metric 2 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-red-900/40 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>P95 LATENCY</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-red-400">
+                  {incidentStatus === 'RESOLVED' ? '240 ms' : '4.82 s'}
+                </div>
+                <div className="text-[10px] text-red-400 font-mono flex items-center space-x-1">
+                  <TrendingUp className="w-3 h-3" />
+                  <span>{incidentStatus === 'RESOLVED' ? '-95% Nominal' : '+1,908% SLA Spike'}</span>
+                </div>
+              </div>
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="2"
+                  points={incidentStatus === 'RESOLVED' ? '0,15 30,12 60,6 80,5 100,4' : '0,18 25,16 50,4 75,2 100,2'}
+                />
+              </svg>
+            </div>
 
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0">
-            {SCENARIOS.map(s => {
-              const isSelected = selectedScenario.id === s.id;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => handleSelectScenario(s)}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
-                    isSelected
-                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
-                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800'
-                  }`}
-                >
-                  {s.name}
-                </button>
-              );
-            })}
+            {/* Metric 3 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-red-900/40 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>HTTP 5XX RATE</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-red-400">
+                  {incidentStatus === 'RESOLVED' ? '0.01%' : '31.4%'}
+                </div>
+                <div className="text-[10px] text-red-400 font-mono">
+                  {incidentStatus === 'RESOLVED' ? 'Threshold OK' : 'Threshold > 1.0%'}
+                </div>
+              </div>
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth="2"
+                  points={incidentStatus === 'RESOLVED' ? '0,18 50,16 100,18' : '0,19 30,18 50,4 70,3 100,2'}
+                />
+              </svg>
+            </div>
+
+            {/* Metric 4 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-slate-800 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>THROUGHPUT (RPS)</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-amber-300">1.24k req/s</div>
+                <div className="text-[10px] text-amber-400 font-mono">-18% Drop off</div>
+              </div>
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline fill="none" stroke="#f59e0b" strokeWidth="2" points="0,5 30,4 60,10 80,12 100,14" />
+              </svg>
+            </div>
+
+            {/* Metric 5 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-slate-800 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>CPU UTILIZATION</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-slate-200">78.2%</div>
+                <div className="text-[10px] text-emerald-400 font-mono">Stable / Within SLA</div>
+              </div>
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline fill="none" stroke="#10b981" strokeWidth="2" points="0,12 25,10 50,9 75,10 100,8" />
+              </svg>
+            </div>
+
+            {/* Metric 6 */}
+            <div className="p-2.5 rounded bg-[#0d1017] border border-slate-800 flex flex-col justify-between">
+              <div className="flex justify-between items-start text-slate-400 text-[10px] font-mono">
+                <span>MEMORY RSS</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              </div>
+              <div className="my-1">
+                <div className="text-base font-bold font-mono text-slate-200">52.4% (3.2 GB)</div>
+                <div className="text-[10px] text-emerald-400 font-mono">Nominal Heap</div>
+              </div>
+              <svg className="w-full h-4 overflow-hidden" viewBox="0 0 100 20">
+                <polyline fill="none" stroke="#10b981" strokeWidth="2" points="0,10 30,10 60,9 80,9 100,9" />
+              </svg>
+            </div>
+          </div>
+
+          {/* MAIN 2-COLUMN OPERATIONAL GRID */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+            {/* LEFT 7 COLS: TIMELINE, OBSERVABILITY CHARTS, RECENT LOGS */}
+            <div className="lg:col-span-7 space-y-4">
+              
+              {/* 5. INCIDENT TIMELINE (CHRONOLOGICAL EVENT STREAM) */}
+              <div className="border border-slate-800 rounded bg-[#0d1017]">
+                <div className="px-3.5 py-2 border-b border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
+                    <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>INCIDENT TIMELINE & CHANGE CORRELATION</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500">Auto-correlated via ArgoCD, Prometheus, PagerDuty</span>
+                </div>
+
+                <div className="p-3 space-y-2 font-mono text-[11px]">
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:34:10</span>
+                    <span className="px-1.5 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-800 text-[10px]">DEPLOY</span>
+                    <span className="text-slate-300">
+                      Deployment <strong>v1.8.2</strong> rolled out by <strong className="text-cyan-400">alex.dev</strong> (commit <code className="text-slate-400">8b7f3a1</code>: <em>"migrate to async pool batching"</em>)
+                    </span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:36:22</span>
+                    <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[10px]">METRIC</span>
+                    <span className="text-slate-300">PostgreSQL active connections rose sharply: <strong>45 &rarr; 75%</strong></span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:37:05</span>
+                    <span className="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800 text-[10px]">LATENCY</span>
+                    <span className="text-slate-300">Checkout API response latency p95 degraded from 240ms &rarr; <strong>2,850ms</strong></span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:38:12</span>
+                    <span className="px-1.5 py-0.2 rounded bg-red-950 text-red-300 border border-red-800 text-[10px]">SATURATE</span>
+                    <span className="text-red-300 font-semibold">
+                      Connection pool reached 100% ceiling (100/100). Incoming checkout queries queued.
+                    </span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:38:40</span>
+                    <span className="px-1.5 py-0.2 rounded bg-red-950 text-red-300 border border-red-800 text-[10px]">5XX SPIKE</span>
+                    <span className="text-slate-300">HTTP 504 Gateway Timeouts detected on <code className="text-slate-400">POST /v1/charges</code> (Error rate: 31.4%)</span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:39:00</span>
+                    <span className="px-1.5 py-0.2 rounded bg-red-950 text-red-300 border border-red-800 text-[10px]">SEV-1</span>
+                    <span className="text-red-400 font-bold">SEV-1 declared automatically by PagerDuty. On-call paged.</span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:39:15</span>
+                    <span className="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 text-[10px]">AI START</span>
+                    <span className="text-purple-300">ResolvIQ multi-agent investigation engaged (Node 1 Classifier &rarr; Node 2 Evidence).</span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:40:24</span>
+                    <span className="px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 text-[10px]">AI ROOT</span>
+                    <span className="text-purple-300">Root cause isolated to unclosed cursor in v1.8.2 (98% confidence).</span>
+                  </div>
+
+                  <div className="flex items-start space-x-3">
+                    <span className="text-slate-500 w-16 shrink-0">16:41:00</span>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px]">ACTION</span>
+                    <span className="text-emerald-300 font-bold">Recommended action generated: Rollback payment-api v1.8.2 &rarr; v1.8.1 (Gated).</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. OBSERVABILITY SECTION (DATADOG / GRAFANA STYLE CHARTS) */}
+              <div className="border border-slate-800 rounded bg-[#0d1017]">
+                <div className="px-3.5 py-2 border-b border-slate-800 flex items-center justify-between">
+                  <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
+                    <BarChart2 className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>TELEMETRY METRICS CORRELATION</span>
+                  </div>
+                  <div className="flex items-center space-x-2 text-[10px] font-mono text-slate-400">
+                    <span className="flex items-center space-x-1">
+                      <span className="w-2 h-0.5 bg-red-400 inline-block" />
+                      <span>Active Connections</span>
+                    </span>
+                    <span className="flex items-center space-x-1">
+                      <span className="w-2 h-0.5 bg-cyan-400 inline-block" />
+                      <span>p95 Latency</span>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Chart 1: DB Connections */}
+                  <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800 space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                      <span>Postgres Pool: Active vs Max (100)</span>
+                      <span className="text-red-400 font-bold">{incidentStatus === 'RESOLVED' ? '42/100' : '100/100 (Max)'}</span>
+                    </div>
+                    {/* SVG Chart */}
+                    <svg className="w-full h-24 overflow-hidden" viewBox="0 0 200 80">
+                      {/* Grid lines */}
+                      <line x1="0" y1="20" x2="200" y2="20" stroke="#1e293b" strokeDasharray="2" />
+                      <line x1="0" y1="50" x2="200" y2="50" stroke="#1e293b" strokeDasharray="2" />
+                      {/* Threshold line 100 max */}
+                      <line x1="0" y1="10" x2="200" y2="10" stroke="#7f1d1d" strokeWidth="1" strokeDasharray="4" />
+                      <text x="5" y="8" fill="#ef4444" fontSize="6" fontFamily="monospace">MAX CEILING (100)</text>
+                      
+                      {/* Deployment marker at x=60 */}
+                      <line x1="60" y1="0" x2="60" y2="80" stroke="#3b82f6" strokeWidth="1" />
+                      <text x="63" y="75" fill="#60a5fa" fontSize="6" fontFamily="monospace">deploy v1.8.2</text>
+
+                      {/* Series */}
+                      <path
+                        fill="none"
+                        stroke="#ef4444"
+                        strokeWidth="2"
+                        d={
+                          incidentStatus === 'RESOLVED'
+                            ? 'M 0 55 L 60 55 L 90 20 L 120 10 L 150 10 L 170 30 L 200 50'
+                            : 'M 0 55 L 60 55 L 90 20 L 120 10 L 150 10 L 200 10'
+                        }
+                      />
+                    </svg>
+                  </div>
+
+                  {/* Chart 2: P95 Latency */}
+                  <div className="p-2.5 rounded bg-slate-950/80 border border-slate-800 space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                      <span>HTTP Request Latency (p95)</span>
+                      <span className="text-cyan-400 font-bold">{incidentStatus === 'RESOLVED' ? '240ms' : '4,820ms'}</span>
+                    </div>
+                    <svg className="w-full h-24 overflow-hidden" viewBox="0 0 200 80">
+                      <line x1="0" y1="20" x2="200" y2="20" stroke="#1e293b" strokeDasharray="2" />
+                      <line x1="0" y1="50" x2="200" y2="50" stroke="#1e293b" strokeDasharray="2" />
+                      <line x1="0" y1="65" x2="200" y2="65" stroke="#065f46" strokeWidth="1" strokeDasharray="4" />
+                      <text x="5" y="63" fill="#10b981" fontSize="6" fontFamily="monospace">SLA THRESHOLD (300ms)</text>
+
+                      <line x1="60" y1="0" x2="60" y2="80" stroke="#3b82f6" strokeWidth="1" />
+                      <path
+                        fill="none"
+                        stroke="#06b6d4"
+                        strokeWidth="2"
+                        d={
+                          incidentStatus === 'RESOLVED'
+                            ? 'M 0 68 L 60 68 L 85 40 L 115 15 L 140 15 L 165 40 L 200 68'
+                            : 'M 0 68 L 60 68 L 85 40 L 115 15 L 140 15 L 200 15'
+                        }
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* 7. RECENT LOGS TABLE (LOKI / CLOUDWATCH STYLE TABLE) */}
+              <div className="border border-slate-800 rounded bg-[#0d1017]">
+                <div className="px-3.5 py-2 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2 font-mono text-xs font-semibold text-slate-300">
+                    <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>LOKI RECENT LOG STREAM (payment-api)</span>
+                  </div>
+
+                  {/* Log Filters */}
+                  <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-1 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] font-mono">
+                      {(['ALL', 'FATAL', 'ERROR', 'WARN'] as const).map(lvl => (
+                        <button
+                          key={lvl}
+                          onClick={() => setSelectedLogFilter(lvl)}
+                          className={`px-1.5 py-0.2 rounded ${
+                            selectedLogFilter === lvl ? 'bg-slate-700 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Filter logs..."
+                      value={logSearch}
+                      onChange={e => setLogSearch(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 rounded px-2 py-0.5 text-[10px] text-slate-200 placeholder-slate-500 outline-none w-28"
+                    />
+                  </div>
+                </div>
+
+                {/* Table Rows */}
+                <div className="overflow-x-auto max-h-52 overflow-y-auto font-mono text-[11px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-slate-950/80 text-[10px] text-slate-400 border-b border-slate-800 sticky top-0">
+                      <tr>
+                        <th className="py-1 px-3 w-24">TIME</th>
+                        <th className="py-1 px-2 w-16">LEVEL</th>
+                        <th className="py-1 px-2 w-44">POD</th>
+                        <th className="py-1 px-3">MESSAGE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredLogs.map(log => (
+                        <tr key={log.id} className="hover:bg-slate-900/50 transition-colors">
+                          <td className="py-1 px-3 text-slate-500 whitespace-nowrap">{log.timestamp}</td>
+                          <td className="py-1 px-2">
+                            <span className={`px-1 py-0.2 rounded text-[9px] font-bold ${
+                              log.level === 'FATAL'
+                                ? 'bg-red-950 text-red-300 border border-red-800'
+                                : log.level === 'ERROR'
+                                ? 'bg-red-950/80 text-red-400'
+                                : log.level === 'WARN'
+                                ? 'bg-amber-950 text-amber-300'
+                                : 'bg-slate-800 text-slate-300'
+                            }`}>
+                              {log.level}
+                            </span>
+                          </td>
+                          <td className="py-1 px-2 text-slate-400 truncate max-w-[170px]">{log.pod}</td>
+                          <td className="py-1 px-3 text-slate-300 truncate max-w-md">{log.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+            </div>
+
+            {/* RIGHT 5 COLS: AI INVESTIGATION, EVIDENCE, REMEDIATION CONTROLS */}
+            <div className="lg:col-span-5 space-y-4">
+              
+              {/* 8. AI INVESTIGATION PANEL (EXPLAINABLE ENTERPRISE SRE TONE) */}
+              <div className="border border-purple-900/50 rounded bg-[#0e101b] space-y-3 p-3.5">
+                <div className="flex items-center justify-between pb-2 border-b border-purple-900/40">
+                  <div className="flex items-center space-x-2">
+                    <span className="w-2 h-2 rounded-full bg-purple-400" />
+                    <span className="font-mono text-xs font-bold text-purple-200 uppercase tracking-wider">
+                      AI Investigation
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800">
+                    Status: Complete (Gemini 2.5 Flash)
+                  </span>
+                </div>
+
+                {/* Agent Completion Checks */}
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                  <div className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Log Analyzer (4.8k)</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Metrics Analyzer</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Deploy Correlator</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 p-1.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    <span>Pinecone Matcher</span>
+                  </div>
+                </div>
+
+                {/* 9. ROOT CAUSE SUMMARY */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase font-bold text-slate-400">ISOLATED ROOT CAUSE</span>
+                    <span className="text-[10px] font-mono text-purple-300 font-bold bg-purple-950/80 px-1.5 py-0.2 rounded border border-purple-800">
+                      Confidence: 98%
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-xs text-slate-200 leading-relaxed font-sans">
+                    Deployment <strong className="text-cyan-400 font-mono">v1.8.2</strong> introduced an unclosed database cursor in async batch worker (<code className="text-slate-400">checkout_worker.py:L142</code>), leaking active connections until the 100/100 pool limit was exhausted.
+                  </div>
+                </div>
+
+                {/* EVIDENCE SUPPORTING CONCLUSION */}
+                <div className="space-y-1.5 text-[11px] font-mono">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">CORROBORATING EVIDENCE</span>
+                  <div className="space-y-1">
+                    <div className="p-1.5 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-slate-300">
+                      <span>✓ Postgres pg_stat_activity saturation</span>
+                      <span className="text-red-400">100/100 slots</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-slate-300">
+                      <span>✓ Loki PG::ConnectionBad timeout error</span>
+                      <span className="text-red-400">4,821 entries</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-slate-300">
+                      <span>✓ Git release 8b7f3a1 (alex.dev)</span>
+                      <span className="text-cyan-400">Deployed 16:34</span>
+                    </div>
+                    <div className="p-1.5 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-slate-300">
+                      <span>✓ Pinecone Runbook #rb-db-pool-01</span>
+                      <span className="text-emerald-400">Score: 0.751</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 10. REMEDIATION PANEL (GATED ACTION CENTER) */}
+              <div className="border border-slate-800 rounded bg-[#0d1017] p-3.5 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <div className="flex items-center space-x-2 font-mono text-xs font-bold text-slate-200">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                    <span>RECOMMENDED REMEDIATION ACTION</span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">
+                    Human Authorization Required
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-200 font-semibold flex items-center justify-between">
+                    <span>Rollback payment-api v1.8.2 &rarr; v1.8.1</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-950 text-amber-300 border border-amber-800">
+                      Risk: MEDIUM
+                    </span>
+                  </div>
+
+                  {/* Impact Breakdown Table */}
+                  <div className="p-2.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono space-y-1 text-slate-300">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Pods Affected:</span>
+                      <span>12/12 replicas in deployment/payment-api</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Expected Recovery Time:</span>
+                      <span className="text-emerald-400 font-bold">&lt; 45 seconds</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Previous Version Stability:</span>
+                      <span>v1.8.1 was live for 14d (99.99% SLA)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Database Schema Migration:</span>
+                      <span className="text-emerald-400">None (Safe to rollback)</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Command Execution:</span>
+                      <code className="text-slate-400">kubectl rollout undo deployment/payment-api</code>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="pt-2 flex items-center space-x-2">
+                    <button
+                      onClick={() => setShowDiffModal(true)}
+                      className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-300 flex items-center space-x-1"
+                    >
+                      <Code2 className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Review Changes</span>
+                    </button>
+
+                    {incidentStatus === 'RESOLVED' ? (
+                      <div className="flex-1 py-1.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-mono font-bold flex items-center justify-center space-x-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Rolled back to v1.8.1 (Healthy)</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={handleApproveRollback}
+                        disabled={isExecutingRollback}
+                        className="flex-1 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 shadow-sm"
+                      >
+                        {isExecutingRollback ? (
+                          <>
+                            <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Rolling out v1.8.1...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Approve & Rollback</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 11. AUDIT & COMPLIANCE TABLE */}
+              <div className="border border-slate-800 rounded bg-[#0d1017] p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono text-slate-300 font-semibold border-b border-slate-800 pb-1.5">
+                  <div className="flex items-center space-x-1.5">
+                    <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+                    <span>AUDIT & REPRODUCIBILITY LOG</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-mono">Neon DB Sync</span>
+                </div>
+
+                <div className="space-y-1 font-mono text-[10px]">
+                  {auditLogs.slice(0, 4).map((audit, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-1.5 rounded bg-slate-950 border border-slate-800/80">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-500">{audit.timestamp}</span>
+                        <span className="text-slate-300 font-semibold">{audit.actor}</span>
+                        <span className="text-slate-400">&rarr; {audit.action}</span>
+                      </div>
+                      <span className="text-emerald-400 font-bold">{audit.result}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 3. MAIN WORKSPACE */}
-      <main className="flex-1 max-w-5xl w-full mx-auto p-6 space-y-6">
-
-        {/* INCIDENT STATUS HERO BANNER */}
-        <div className={`p-6 rounded-2xl border transition-all ${
-          incidentState === 'RESOLVED'
-            ? 'bg-emerald-950/20 border-emerald-800/60 shadow-xl shadow-emerald-950/20'
-            : incidentState === 'RESOLVING'
-            ? 'bg-cyan-950/20 border-cyan-800/60 shadow-xl shadow-cyan-950/20 animate-pulse'
-            : 'bg-rose-950/20 border-rose-800/60 shadow-xl shadow-rose-950/20'
-        }`}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-start space-x-4">
-              <div className={`p-3 rounded-xl mt-1 ${
-                incidentState === 'RESOLVED'
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : incidentState === 'RESOLVING'
-                  ? 'bg-cyan-500/20 text-cyan-400 animate-spin'
-                  : 'bg-rose-500/20 text-rose-400 animate-pulse'
-              }`}>
-                {incidentState === 'RESOLVED' ? (
-                  <CheckCircle2 className="w-6 h-6" />
-                ) : incidentState === 'RESOLVING' ? (
-                  <RotateCcw className="w-6 h-6" />
-                ) : (
-                  <AlertCircle className="w-6 h-6" />
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className={`text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
-                    incidentState === 'RESOLVED'
-                      ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
-                      : 'bg-rose-900/60 text-rose-300 border border-rose-700'
-                  }`}>
-                    {incidentState === 'RESOLVED' ? 'All Systems Healthy' : selectedScenario.severity}
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">Service: {selectedScenario.service}</span>
-                </div>
-
-                <h1 className="text-xl font-bold text-white mt-1.5">
-                  {incidentState === 'RESOLVED'
-                    ? `${selectedScenario.service} Restored to 100% Nominal Health`
-                    : `${selectedScenario.name}: Severe Outage Detected`}
-                </h1>
-                
-                <p className="text-sm text-slate-300 mt-1">
-                  {incidentState === 'RESOLVED'
-                    ? 'Automated rollback executed successfully. Database connections and latency returned to normal.'
-                    : selectedScenario.problem}
-                </p>
-              </div>
+      {/* REVIEW CODE DIFF MODAL */}
+      {showDiffModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0f121d] border border-slate-800 rounded-lg max-w-2xl w-full p-4 space-y-3 font-mono text-xs shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <span className="font-bold text-white">Diff Review: payment-api v1.8.2 vs v1.8.1</span>
+              <button onClick={() => setShowDiffModal(false)} className="text-slate-400 hover:text-white">✕</button>
             </div>
 
-            {/* Quick Time Counter */}
-            <div className="px-5 py-3 rounded-xl bg-slate-900/80 border border-slate-800 text-right min-w-[150px]">
-              <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">MTTR (Resolution Time)</div>
-              <div className={`text-2xl font-bold font-mono ${
-                incidentState === 'RESOLVED' ? 'text-emerald-400' : 'text-amber-400'
-              }`}>
-                {incidentState === 'RESOLVED' ? '1m 24s' : 'Ongoing'}
-              </div>
-              <div className="text-[11px] text-slate-400">
-                {incidentState === 'RESOLVED' ? 'Saved 43 mins of downtime' : 'AI Multi-Agent Swarm Active'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3-STEP STORY CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-
-          {/* STEP 1: WHAT BROKE? */}
-          <div className="p-5 rounded-2xl bg-[#0d1322] border border-slate-800 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
-                <span>Step 1: The Problem</span>
-                <span className="w-6 h-6 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center font-bold">1</span>
-              </div>
-              <h3 className="text-base font-semibold text-white">What broke?</h3>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                {selectedScenario.problem}
-              </p>
-
-              <div className="mt-4 space-y-3">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Resource Saturation:</span>
-                    <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {incidentState === 'RESOLVED' ? selectedScenario.nominalConnections : selectedScenario.failingConnections}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-700 ${
-                        incidentState === 'RESOLVED' ? 'w-[40%] bg-emerald-500' : 'w-full bg-rose-500'
-                      }`}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Response Latency:</span>
-                    <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {incidentState === 'RESOLVED' ? selectedScenario.nominalLatency : selectedScenario.failingLatency}
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-700 ${
-                        incidentState === 'RESOLVED' ? 'w-[15%] bg-emerald-500' : 'w-[95%] bg-rose-500'
-                      }`}
-                    />
-                  </div>
-                </div>
-              </div>
+            <div className="bg-slate-950 p-3 rounded border border-slate-800 text-[11px] overflow-x-auto space-y-1">
+              <div className="text-slate-500"># File: src/workers/checkout_worker.py:L138-146</div>
+              <div className="text-slate-400">  async def process_checkout_batch(batch_items):</div>
+              <div className="text-red-400 bg-red-950/40">-     db_conn = await pool.acquire() # Leak: missing try-finally release</div>
+              <div className="text-red-400 bg-red-950/40">-     cursor = await db_conn.cursor()</div>
+              <div className="text-emerald-400 bg-emerald-950/40">+     async with pool.acquire() as db_conn: # Safe context manager in v1.8.1</div>
+              <div className="text-emerald-400 bg-emerald-950/40">+         async with db_conn.cursor() as cursor:</div>
+              <div className="text-slate-400">              await execute_charges(cursor, batch_items)</div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Target: <strong>{selectedScenario.service}</strong></span>
-              <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
-                {incidentState === 'RESOLVED' ? 'Healthy' : 'Failing SLA'}
-              </span>
-            </div>
-          </div>
-
-          {/* STEP 2: WHAT CAUSED IT? */}
-          <div className="p-5 rounded-2xl bg-[#0d1322] border border-slate-800 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">
-                <span>Step 2: AI Investigation</span>
-                <span className="w-6 h-6 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center justify-center font-bold">2</span>
-              </div>
-              <h3 className="text-base font-semibold text-white flex items-center space-x-1.5">
-                <span>What caused it?</span>
-                <Sparkles className="w-4 h-4 text-cyan-400" />
-              </h3>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                {selectedScenario.rootCause}
-              </p>
-
-              <div className="mt-3 space-y-2">
-                <div className="flex items-center space-x-2 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>Confidence Score:</strong> 98% (Gemini 2.5 Flash)</span>
-                </div>
-                <div className="flex items-center space-x-2 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>Telemetry Proof:</strong> Prometheus + Loki Logs</span>
-                </div>
-                <div className="flex items-center space-x-2 text-xs text-slate-300">
-                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>Runbook Match:</strong> Pinecone Vector Search (0.751)</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>LangGraph Nodes: <strong>4/4 Completed</strong></span>
-              <span className="text-cyan-400 font-medium">Root Cause Proven</span>
-            </div>
-          </div>
-
-          {/* STEP 3: HOW DO WE FIX IT? */}
-          <div className="p-5 rounded-2xl bg-gradient-to-b from-[#10172a] to-[#0d1322] border border-cyan-500/30 flex flex-col justify-between space-y-4 shadow-lg shadow-cyan-950/20">
-            <div>
-              <div className="flex items-center justify-between text-xs text-cyan-400 font-semibold uppercase tracking-wider mb-2">
-                <span>Step 3: Solution & Action</span>
-                <span className="w-6 h-6 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center font-bold">3</span>
-              </div>
-              <h3 className="text-base font-semibold text-white">How do we fix it?</h3>
-              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                {selectedScenario.recommendedAction}
-              </p>
-
-              <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-xs text-amber-200 flex items-start space-x-2">
-                <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Safety Gate:</strong> Calls Backend Gateway (Port 4000) for authenticated audit logging.
-                </span>
-              </div>
-            </div>
-
-            <div>
-              {incidentState === 'RESOLVED' ? (
-                <div className="w-full py-3 rounded-xl bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Action Executed & Verified</span>
-                </div>
-              ) : incidentState === 'RESOLVING' ? (
-                <div className="w-full py-3 rounded-xl bg-cyan-950 border border-cyan-800 text-cyan-200 text-xs font-semibold flex items-center justify-center space-x-2">
-                  <RotateCcw className="w-4 h-4 text-cyan-400 animate-spin" />
-                  <span>{actionProgress || 'Executing Rollback...'}</span>
-                </div>
-              ) : (
-                <button
-                  onClick={handleApproveRollback}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-cyan-500/25 flex items-center justify-center space-x-2 transition-all transform active:scale-[0.98]"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>Approve & Execute Fix</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 4. LIVE NETWORK INSPECTOR (PROVES REAL API CALLS ARE HAPPENING) */}
-        <div className="p-4 rounded-2xl bg-[#0d1322] border border-slate-800 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300 uppercase tracking-wider">
-              <Activity className="w-4 h-4 text-cyan-400" />
-              <span>Live API Network Traffic (Ports 4000 & 8000)</span>
-            </div>
-            <span className="text-[11px] font-mono text-slate-500">
-              Inspect in browser Network tab or view live requests below
-            </span>
-          </div>
-
-          <div className="space-y-1.5 font-mono text-[11px]">
-            {networkLogs.length === 0 ? (
-              <div className="text-slate-500 py-1 italic">No network requests logged yet. Trigger an action above!</div>
-            ) : (
-              networkLogs.map(log => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-2 rounded-lg bg-slate-950/80 border border-slate-800/80 text-slate-300"
-                >
-                  <div className="flex items-center space-x-2.5">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      log.method === 'POST' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' : 'bg-slate-800 text-slate-300'
-                    }`}>
-                      {log.method}
-                    </span>
-                    <span className="text-slate-200">{log.url}</span>
-                  </div>
-
-                  <div className="flex items-center space-x-3 text-slate-400">
-                    <span className={`font-bold ${log.status === 200 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {log.status === 200 ? '200 OK' : log.status}
-                    </span>
-                    <span>{log.durationMs}ms</span>
-                    <span className="text-slate-500">{log.timestamp}</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* 5. INTERACTIVE LIVE AI COPILOT (REAL CALLS TO PORT 8000 VIA GEMINI) */}
-        <div className="p-6 rounded-2xl bg-[#0d1322] border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <Bot className="w-5 h-5 text-cyan-400" />
-              <h3 className="text-base font-semibold text-white">Ask the AI SRE Copilot (Live Gemini 2.5 Flash)</h3>
-            </div>
-            <span className="text-xs text-cyan-400 font-mono">POST http://localhost:8000/api/v1/chat</span>
-          </div>
-
-          {/* Chat Messages Log */}
-          <div className="space-y-3 max-h-56 overflow-y-auto p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 text-xs leading-relaxed">
-            {chatMessages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`flex items-start space-x-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {msg.sender === 'ai' && (
-                  <div className="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                  </div>
-                )}
-                <div
-                  className={`p-3 rounded-xl max-w-[80%] ${
-                    msg.sender === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-900 border border-slate-800 text-slate-200'
-                  }`}
-                >
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-            {isAiReplying && (
-              <div className="text-xs text-slate-500 italic flex items-center space-x-2">
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-                <span>Calling Google Gemini 2.5 Flash on port 8000...</span>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Prompt Chips */}
-          <div className="flex items-center space-x-2 overflow-x-auto text-xs pb-1">
-            <span className="text-slate-500 font-medium shrink-0">Try asking:</span>
-            {[
-              'Why is rollback recommended?',
-              'Who authored this deployment?',
-              'What does the Pinecone runbook say?',
-              'Can we scale the pool instead?'
-            ].map(prompt => (
+            <div className="flex justify-end space-x-2 pt-2">
               <button
-                key={prompt}
-                onClick={() => handleSendMessage(prompt)}
-                className="px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 shrink-0 transition-colors"
+                onClick={() => setShowDiffModal(false)}
+                className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-300"
               >
-                {prompt}
+                Close
               </button>
-            ))}
+              <button
+                onClick={() => {
+                  setShowDiffModal(false);
+                  handleApproveRollback();
+                }}
+                className="px-3 py-1.5 rounded bg-cyan-600 hover:bg-cyan-500 text-xs font-semibold text-white"
+              >
+                Confirm & Approve Rollback
+              </button>
+            </div>
           </div>
-
-          {/* Input Box */}
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              handleSendMessage();
-            }}
-            className="flex items-center space-x-2"
-          >
-            <input
-              type="text"
-              value={userQuery}
-              onChange={e => setUserQuery(e.target.value)}
-              placeholder="Ask a question about this outage or its resolution..."
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
-            />
-            <button
-              type="submit"
-              disabled={!userQuery.trim() || isAiReplying}
-              className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-md shadow-cyan-500/20"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>Ask</span>
-            </button>
-          </form>
         </div>
+      )}
 
-      </main>
     </div>
   );
 }

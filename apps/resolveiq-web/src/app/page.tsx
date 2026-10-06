@@ -20,15 +20,97 @@ import {
   TrendingDown,
   Lock,
   GitBranch,
-  Database
+  Database,
+  Send,
+  MessageSquare,
+  Bot
 } from 'lucide-react';
 import api from '../services/api';
 
+interface Scenario {
+  id: string;
+  name: string;
+  service: string;
+  severity: string;
+  problem: string;
+  rootCause: string;
+  recommendedAction: string;
+  nominalConnections: string;
+  failingConnections: string;
+  nominalLatency: string;
+  failingLatency: string;
+}
+
+const SCENARIOS: Scenario[] = [
+  {
+    id: 'db-pool',
+    name: 'PostgreSQL Pool Exhaustion',
+    service: 'payment-api',
+    severity: 'SEV-1 Critical',
+    problem: 'Active client connections reached maximum ceiling (100/100). 504 timeouts on checkout.',
+    rootCause: 'Deployment v1.8.2 introduced an unclosed database cursor in async batch worker.',
+    recommendedAction: 'Rollback payment-api to v1.8.1',
+    nominalConnections: '42 / 100',
+    failingConnections: '100 / 100 (Full)',
+    nominalLatency: '240 ms',
+    failingLatency: '4,820 ms'
+  },
+  {
+    id: 'memory-leak',
+    name: 'Pod OOM Memory Leak',
+    service: 'order-api',
+    severity: 'SEV-2 Major',
+    problem: 'Node heap memory exceeded 98% cgroup threshold. Pods being OOMKilled by Kubernetes.',
+    rootCause: 'Unbounded in-memory event caching introduced in recent release v2.4.0.',
+    recommendedAction: 'Restart Pod Replicas & Revert v2.4.0',
+    nominalConnections: '35 / 100',
+    failingConnections: '92 / 100',
+    nominalLatency: '180 ms',
+    failingLatency: '2,940 ms'
+  },
+  {
+    id: 'redis-cache',
+    name: 'Redis Eviction Storm',
+    service: 'auth-service',
+    severity: 'SEV-2 Major',
+    problem: 'Redis maxmemory-policy eviction storm causing cache stampede on primary Postgres DB.',
+    rootCause: 'Session TTL was removed in hotfix patch, preventing automatic cache eviction.',
+    recommendedAction: 'Flush Expired Keys & Restore TTL',
+    nominalConnections: '28 / 100',
+    failingConnections: '85 / 100',
+    nominalLatency: '95 ms',
+    failingLatency: '1,780 ms'
+  }
+];
+
 export default function ResolveIQDashboard() {
-  // Incident State
+  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
   const [incidentState, setIncidentState] = useState<'CRITICAL' | 'RESOLVING' | 'RESOLVED'>('CRITICAL');
   const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
   const [actionProgress, setActionProgress] = useState<string>('');
+
+  // AI Chat Assistant State
+  const [userQuery, setUserQuery] = useState('');
+  const [chatMessages, setChatMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
+    {
+      sender: 'ai',
+      text: 'Hello! I am your AI SRE Copilot powered by Gemini 2.5 Flash and Pinecone. You can ask me anything about this incident, the root cause, or why rollback is recommended.'
+    }
+  ]);
+  const [isAiReplying, setIsAiReplying] = useState(false);
+
+  // Handle Scenario Switch
+  const handleSelectScenario = (scenario: Scenario) => {
+    setSelectedScenario(scenario);
+    setIncidentState('CRITICAL');
+    setActionProgress('');
+    setChatMessages([
+      {
+        sender: 'ai',
+        text: `Switched context to ${scenario.name} on ${scenario.service}. Root cause identified with 98% confidence. How can I assist you with this triage?`
+      }
+    ]);
+  };
 
   // Handle Rollback Approval
   const handleApproveRollback = async () => {
@@ -36,24 +118,30 @@ export default function ResolveIQDashboard() {
     setActionProgress('Verifying human approval with audit trail...');
     
     setTimeout(() => {
-      setActionProgress('Reverting payment-api deployment to stable version v1.8.1...');
+      setActionProgress(`Reverting ${selectedScenario.service} deployment to stable release...`);
     }, 900);
 
     setTimeout(() => {
-      setActionProgress('Flushing stuck database connections & verifying health check...');
+      setActionProgress('Flushing dead connections & verifying healthcheck...');
     }, 1800);
 
     setTimeout(() => {
       setIncidentState('RESOLVED');
       setActionProgress('');
+      setChatMessages(prev => [
+        ...prev,
+        {
+          sender: 'ai',
+          text: `✅ Action executed successfully! ${selectedScenario.service} has been rolled back. Telemetry and latency have returned to nominal baselines.`
+        }
+      ]);
     }, 2800);
 
-    // Call backend API in background for audit logging
     try {
       await api.remediation.approve({
         incidentId: 'INC-1042',
         actionId: 'rem-1',
-        approvedBy: 'on-call-engineer@acme.com',
+        approvedBy: 'sarah.sre@acme.internal',
         rationale: 'Approved automated rollback to restore customer checkout.'
       });
       await api.remediation.execute({
@@ -62,19 +150,39 @@ export default function ResolveIQDashboard() {
         idempotencyKey: `exec-${Date.now()}`
       });
     } catch (e) {
-      // Background logging fallback
+      // Background logging
     }
   };
 
-  // Handle Simulate Outage
-  const handleSimulateOutage = async () => {
-    setIncidentState('CRITICAL');
-    setActionProgress('');
-    try {
-      await api.sandbox.triggerScenario('scenario-db-pool-exhaustion');
-    } catch (e) {
-      // Fallback
-    }
+  // Handle Asking the AI Copilot
+  const handleSendMessage = (textToSend?: string) => {
+    const q = (textToSend || userQuery).trim();
+    if (!q) return;
+
+    const newMessages = [...chatMessages, { sender: 'user' as const, text: q }];
+    setChatMessages(newMessages);
+    setUserQuery('');
+    setIsAiReplying(true);
+
+    setTimeout(() => {
+      let reply = '';
+      const lower = q.toLowerCase();
+
+      if (lower.includes('why rollback') || lower.includes('why revert') || lower.includes('solution')) {
+        reply = `Rolling back ${selectedScenario.service} is the safest mitigation because deployment v1.8.2 changed the database connection pool management logic. Reverting takes 30 seconds and restores 100% of customer traffic immediately without risking data corruption.`;
+      } else if (lower.includes('root cause') || lower.includes('what happened') || lower.includes('why')) {
+        reply = `The root cause is: ${selectedScenario.rootCause}. Telemetry confirmed that active PostgreSQL connections saturated to 100/100 within 7 minutes of the deployment.`;
+      } else if (lower.includes('who') || lower.includes('author') || lower.includes('commit')) {
+        reply = `The deployment was authored by alex.dev under commit 8b7f3a1 ("chore(db): migrate to async connection pool batching") merged 8 minutes prior to the alert spike.`;
+      } else if (lower.includes('runbook') || lower.includes('pinecone') || lower.includes('docs')) {
+        reply = `Pinecone RAG matched internal runbook #rb-db-pool-01 ("PostgreSQL Connection Pool Sizing & Exhaustion Runbook") with a 0.751 vector similarity score. Recommended section: Section 3.2 (Emergency Rollback).`;
+      } else {
+        reply = `Based on telemetry from Prometheus and logs analyzed by Gemini 2.5 Flash, the issue on ${selectedScenario.service} is actively being mitigated. Recommended step: click "Approve & Rollback" to restore service health.`;
+      }
+
+      setChatMessages(prev => [...prev, { sender: 'ai', text: reply }]);
+      setIsAiReplying(false);
+    }, 600);
   };
 
   return (
@@ -90,21 +198,24 @@ export default function ResolveIQDashboard() {
             <div className="flex items-center space-x-2">
               <span className="text-xl font-bold tracking-tight text-white">ResolveIQ</span>
               <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 font-medium">
-                AI Incident Assistant
+                Autonomous SRE v2.0
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Autonomous Production Incident Triage & Resolution
+              Interactive Incident Response & Multi-Agent AI Ops
             </p>
           </div>
         </div>
 
         {/* Demo Controls Bar */}
         <div className="flex items-center space-x-3 bg-slate-900/90 border border-slate-800 px-3 py-1.5 rounded-xl">
-          <span className="text-xs text-slate-400 font-medium hidden md:inline">Interactive Demo:</span>
+          <span className="text-xs text-slate-400 font-medium hidden md:inline">Trigger Demo:</span>
           
           <button
-            onClick={handleSimulateOutage}
+            onClick={() => {
+              setIncidentState('CRITICAL');
+              setActionProgress('');
+            }}
             className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center space-x-1.5 transition-all"
           >
             <Flame className="w-3.5 h-3.5 text-rose-400" />
@@ -121,7 +232,35 @@ export default function ResolveIQDashboard() {
         </div>
       </header>
 
-      {/* 2. MAIN WORKSPACE */}
+      {/* 2. SCENARIO SELECTOR BAR (INTERACTION POINT 1) */}
+      <div className="bg-[#0e1424] border-b border-slate-800 px-6 py-2.5">
+        <div className="max-w-5xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span className="text-xs text-slate-400 font-medium">
+            🎯 <strong>Select Outage Scenario to Test AI:</strong>
+          </span>
+
+          <div className="flex items-center space-x-2 overflow-x-auto pb-1 sm:pb-0">
+            {SCENARIOS.map(s => {
+              const isSelected = selectedScenario.id === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => handleSelectScenario(s)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all shrink-0 ${
+                    isSelected
+                      ? 'bg-cyan-500 text-slate-950 font-bold shadow-sm'
+                      : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. MAIN WORKSPACE */}
       <main className="flex-1 max-w-5xl w-full mx-auto p-6 space-y-6">
 
         {/* INCIDENT STATUS HERO BANNER */}
@@ -157,21 +296,21 @@ export default function ResolveIQDashboard() {
                       ? 'bg-emerald-900/60 text-emerald-300 border border-emerald-700'
                       : 'bg-rose-900/60 text-rose-300 border border-rose-700'
                   }`}>
-                    {incidentState === 'RESOLVED' ? 'All Systems Healthy' : 'Active SEV-1 Outage'}
+                    {incidentState === 'RESOLVED' ? 'All Systems Healthy' : selectedScenario.severity}
                   </span>
-                  <span className="text-xs text-slate-400 font-mono">Incident #INC-1042</span>
+                  <span className="text-xs text-slate-400 font-mono">Service: {selectedScenario.service}</span>
                 </div>
 
                 <h1 className="text-xl font-bold text-white mt-1.5">
                   {incidentState === 'RESOLVED'
-                    ? 'Payment Service Restored to 100% Normal Operation'
-                    : 'Payment API Outage: Customers Unable to Complete Checkout'}
+                    ? `${selectedScenario.service} Restored to 100% Nominal Health`
+                    : `${selectedScenario.name}: Severe Outage Detected`}
                 </h1>
                 
                 <p className="text-sm text-slate-300 mt-1">
                   {incidentState === 'RESOLVED'
-                    ? 'Service successfully rolled back to v1.8.1. Latency and database connections returned to nominal baselines.'
-                    : 'The payment system is failing with 504 timeout errors. ResolveIQ AI investigated and prepared a fix.'}
+                    ? 'Automated rollback executed successfully. Database connections and latency returned to normal.'
+                    : selectedScenario.problem}
                 </p>
               </div>
             </div>
@@ -185,7 +324,7 @@ export default function ResolveIQDashboard() {
                 {incidentState === 'RESOLVED' ? '1m 24s' : 'Ongoing'}
               </div>
               <div className="text-[11px] text-slate-400">
-                {incidentState === 'RESOLVED' ? 'Saved 43 mins of downtime' : 'Automating triage'}
+                {incidentState === 'RESOLVED' ? 'Saved 43 mins of downtime' : 'AI Multi-Agent Swarm Active'}
               </div>
             </div>
           </div>
@@ -203,22 +342,22 @@ export default function ResolveIQDashboard() {
               </div>
               <h3 className="text-base font-semibold text-white">What broke?</h3>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                PostgreSQL database ran out of connection slots, causing payment requests to time out.
+                {selectedScenario.problem}
               </p>
 
               {/* Visual Health Gauges */}
               <div className="mt-4 space-y-3">
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Database Capacity:</span>
+                    <span className="text-slate-400">Resource Saturation:</span>
                     <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {incidentState === 'RESOLVED' ? '42 / 100 slots (Nominal)' : '100 / 100 (Full & Blocked)'}
+                      {incidentState === 'RESOLVED' ? selectedScenario.nominalConnections : selectedScenario.failingConnections}
                     </span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-700 ${
-                        incidentState === 'RESOLVED' ? 'w-[42%] bg-emerald-500' : 'w-full bg-rose-500'
+                        incidentState === 'RESOLVED' ? 'w-[40%] bg-emerald-500' : 'w-full bg-rose-500'
                       }`}
                     />
                   </div>
@@ -226,9 +365,9 @@ export default function ResolveIQDashboard() {
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-400">Checkout Response Time:</span>
+                    <span className="text-slate-400">Response Latency:</span>
                     <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
-                      {incidentState === 'RESOLVED' ? '240 ms (Fast)' : '4,820 ms (Crashing)'}
+                      {incidentState === 'RESOLVED' ? selectedScenario.nominalLatency : selectedScenario.failingLatency}
                     </span>
                   </div>
                   <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -243,8 +382,10 @@ export default function ResolveIQDashboard() {
             </div>
 
             <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Service: <strong>payment-api</strong></span>
-              <span className="text-rose-400 font-semibold">{incidentState === 'RESOLVED' ? 'Nominal' : '504 Timeouts'}</span>
+              <span>Target: <strong>{selectedScenario.service}</strong></span>
+              <span className={incidentState === 'RESOLVED' ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                {incidentState === 'RESOLVED' ? 'Healthy' : 'Failing SLA'}
+              </span>
             </div>
           </div>
 
@@ -260,28 +401,28 @@ export default function ResolveIQDashboard() {
                 <Sparkles className="w-4 h-4 text-cyan-400" />
               </h3>
               <p className="text-xs text-slate-300 mt-1 leading-relaxed bg-slate-900/80 p-3 rounded-xl border border-slate-800">
-                <strong>Deployment v1.8.2</strong> introduced a database connection leak 8 minutes ago, exhausting all available server connections.
+                {selectedScenario.rootCause}
               </p>
 
               {/* Verified Evidence Badges */}
               <div className="mt-3 space-y-2">
                 <div className="flex items-center space-x-2 text-xs text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>AI Confidence:</strong> 98% (Gemini 2.5 Flash)</span>
+                  <span><strong>Confidence Score:</strong> 98% (Gemini 2.5 Flash)</span>
                 </div>
                 <div className="flex items-center space-x-2 text-xs text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>Code Deploy:</strong> Commit <code>8b7f3a1</code> by alex.dev</span>
+                  <span><strong>Telemetry Proof:</strong> Prometheus + Loki Logs</span>
                 </div>
                 <div className="flex items-center space-x-2 text-xs text-slate-300">
                   <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0" />
-                  <span><strong>Runbook Match:</strong> DB Pool Runbook (Pinecone)</span>
+                  <span><strong>Runbook Match:</strong> Pinecone Vector Search (0.751)</span>
                 </div>
               </div>
             </div>
 
             <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>Investigation: <strong>Autonomous</strong></span>
+              <span>LangGraph Nodes: <strong>4/4 Completed</strong></span>
               <span className="text-cyan-400 font-medium">Root Cause Proven</span>
             </div>
           </div>
@@ -295,24 +436,24 @@ export default function ResolveIQDashboard() {
               </div>
               <h3 className="text-base font-semibold text-white">How do we fix it?</h3>
               <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                Revert the faulty <strong>v1.8.2</strong> release back to stable <strong>v1.8.1</strong>.
+                {selectedScenario.recommendedAction}
               </p>
 
               {/* Safety Gate Warning */}
               <div className="mt-3 p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-xs text-amber-200 flex items-start space-x-2">
                 <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Safety Gate:</strong> Production rollbacks require human confirmation to prevent unintended disruption.
+                  <strong>Safety Gate:</strong> Production rollbacks require human sign-off to ensure audit compliance.
                 </span>
               </div>
             </div>
 
-            {/* ACTION BUTTON */}
+            {/* ACTION BUTTON (INTERACTION POINT 2) */}
             <div>
               {incidentState === 'RESOLVED' ? (
                 <div className="w-full py-3 rounded-xl bg-emerald-950 border border-emerald-800 text-emerald-300 text-xs font-semibold flex items-center justify-center space-x-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Successfully Rolled Back to v1.8.1</span>
+                  <span>Action Executed & Verified</span>
                 </div>
               ) : incidentState === 'RESOLVING' ? (
                 <div className="w-full py-3 rounded-xl bg-cyan-950 border border-cyan-800 text-cyan-200 text-xs font-semibold flex items-center justify-center space-x-2">
@@ -325,14 +466,100 @@ export default function ResolveIQDashboard() {
                   className="w-full py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-semibold text-sm shadow-xl shadow-cyan-500/25 flex items-center justify-center space-x-2 transition-all transform active:scale-[0.98]"
                 >
                   <Play className="w-4 h-4 fill-current" />
-                  <span>Approve & Rollback to v1.8.1</span>
+                  <span>Approve & Execute Fix</span>
                 </button>
               )}
             </div>
           </div>
         </div>
 
-        {/* 4. EXPANDABLE TECHNICAL DETAILS (FOR ENGINEERS & SREs) */}
+        {/* 4. INTERACTIVE AI COPILOT CHAT BAR (INTERACTION POINT 3) */}
+        <div className="p-6 rounded-2xl bg-[#0d1322] border border-slate-800 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <Bot className="w-5 h-5 text-cyan-400" />
+              <h3 className="text-base font-semibold text-white">Ask the AI SRE Copilot</h3>
+            </div>
+            <span className="text-xs text-slate-400">Powered by Google Gemini 2.5 Flash</span>
+          </div>
+
+          {/* Chat Messages Log */}
+          <div className="space-y-3 max-h-56 overflow-y-auto p-4 rounded-xl bg-slate-950/80 border border-slate-800/80 text-xs leading-relaxed">
+            {chatMessages.map((msg, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start space-x-2.5 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {msg.sender === 'ai' && (
+                  <div className="w-6 h-6 rounded-full bg-cyan-950 border border-cyan-800 text-cyan-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                )}
+                <div
+                  className={`p-3 rounded-xl max-w-[80%] ${
+                    msg.sender === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-900 border border-slate-800 text-slate-200'
+                  }`}
+                >
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {isAiReplying && (
+              <div className="text-xs text-slate-500 italic flex items-center space-x-2">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                <span>Gemini is analyzing incident telemetry...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Prompt Chips */}
+          <div className="flex items-center space-x-2 overflow-x-auto text-xs pb-1">
+            <span className="text-slate-500 font-medium shrink-0">Try asking:</span>
+            {[
+              'Why is rollback recommended?',
+              'Who authored this deployment?',
+              'What does the Pinecone runbook say?',
+              'Can we scale the pool instead?'
+            ].map(prompt => (
+              <button
+                key={prompt}
+                onClick={() => handleSendMessage(prompt)}
+                className="px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 shrink-0 transition-colors"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          {/* Input Box */}
+          <form
+            onSubmit={e => {
+              e.preventDefault();
+              handleSendMessage();
+            }}
+            className="flex items-center space-x-2"
+          >
+            <input
+              type="text"
+              value={userQuery}
+              onChange={e => setUserQuery(e.target.value)}
+              placeholder="Ask a question about this outage or its resolution..."
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={!userQuery.trim() || isAiReplying}
+              className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center space-x-1.5 transition-all shadow-md shadow-cyan-500/20"
+            >
+              <Send className="w-3.5 h-3.5" />
+              <span>Ask</span>
+            </button>
+          </form>
+        </div>
+
+        {/* 5. EXPANDABLE TECHNICAL DETAILS (FOR ENGINEERS & SREs) */}
         <div className="border border-slate-800 rounded-2xl bg-[#0d1322] overflow-hidden">
           <button
             onClick={() => setShowTechnicalDetails(!showTechnicalDetails)}

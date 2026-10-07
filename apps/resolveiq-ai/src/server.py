@@ -37,6 +37,15 @@ class ChatRequest(BaseModel):
     incident_id: str = "INC-1042"
     service_name: str = "payment-api"
 
+@app.get("/")
+def root():
+    return {
+        "service": "ResolveIQ AI Engine",
+        "status": "Online",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
 @app.get("/health")
 def health():
     return {

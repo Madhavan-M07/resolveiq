@@ -29,12 +29,12 @@ const resolveApiBaseUrl = (): string => {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://localhost:4000/api/v1';
     }
-    // In production container / ingress, route through relative /api/v1 path
-    return `${window.location.origin}/api/v1`;
+    // In production (e.g. Vercel), route to live Render API Gateway
+    return 'https://resolveiq-1-zqj0.onrender.com/api/v1';
   }
 
   // 3. Server-side rendering (SSR) fallback
-  return 'http://localhost:4000/api/v1';
+  return 'https://resolveiq-1-zqj0.onrender.com/api/v1';
 };
 
 // ============================================================================

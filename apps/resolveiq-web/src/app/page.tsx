@@ -104,9 +104,9 @@ interface ApiAuditEvent {
   status: string;
 }
 
-// Dynamic API Gateways (Environment Variable configurable with local dev fallbacks)
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const AI_BASE = process.env.NEXT_PUBLIC_AI_URL || 'http://localhost:8000';
+// Dynamic API Gateways (Environment Variable configurable with live production fallbacks)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://resolveiq-1-zqj0.onrender.com';
+const AI_BASE = process.env.NEXT_PUBLIC_AI_URL || 'https://resolveiq-247q.onrender.com';
 
 export default function ResolveIQDashboard() {
   // Navigation State
@@ -469,7 +469,7 @@ export default function ResolveIQDashboard() {
   const handleSimulateOutage = async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/trigger', {
+      const res = await fetch(`${API_BASE}/api/v1/sandbox/scenarios/trigger`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenarioId: 'payment-db-pool' })
@@ -487,11 +487,11 @@ export default function ResolveIQDashboard() {
   const handleReset = async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/sandbox/scenarios/reset', { method: 'POST' });
+      const res = await fetch(`${API_BASE}/api/v1/sandbox/scenarios/reset`, { method: 'POST' });
       logNetworkCall('POST', '/api/v1/sandbox/scenarios/reset', res.status, Date.now() - start);
 
       // Update incident to RESOLVED on backend
-      await fetch('http://localhost:4000/api/v1/incidents/inc-1042/status', {
+      await fetch(`${API_BASE}/api/v1/incidents/inc-1042/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'RESOLVED', resolutionNote: 'Reset to healthy baseline' })

@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  resolveiq-api:
+    build:
+      context: ./apps/resolveiq-api
+      dockerfile: Dockerfile
+    container_name: resolveiq-api
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL:-postgresql://neondb_owner:npg_Jva7o0OnVGfU@ep-lucky-truth-b5pm16vs-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require}
+      - JWT_SECRET=${JWT_SECRET:-resolveiq_production_jwt_secret_key_2026}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  resolveiq-ai:
+    build:
+      context: ./apps/resolveiq-ai
+      dockerfile: Dockerfile
+    container_name: resolveiq-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-flash-lite-latest}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-resolveiq-knowledge}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  resolveiq-web:
+    build:
+      context: ./apps/resolveiq-web
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        - NEXT_PUBLIC_AI_URL=${NEXT_PUBLIC_AI_URL:-http://localhost:8000}
+    container_name: resolveiq-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - resolveiq-api
+      - resolveiq-ai

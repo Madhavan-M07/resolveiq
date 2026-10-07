@@ -102,6 +102,10 @@ interface ApiAuditEvent {
   status: string;
 }
 
+// Dynamic API Gateways (Environment Variable configurable with local dev fallbacks)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const AI_BASE = process.env.NEXT_PUBLIC_AI_URL || 'http://localhost:8000';
+
 export default function ResolveIQDashboard() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<'incident' | 'services' | 'database' | 'integrations' | 'audit'>('incident');
@@ -142,11 +146,11 @@ export default function ResolveIQDashboard() {
     setNetworkLogs(prev => [entry, ...prev.slice(0, 5)]);
   };
 
-  // 1. Fetch Real Incident from API Gateway (Port 4000)
+  // 1. Fetch Real Incident from API Gateway
   const fetchIncidentData = useCallback(async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/incidents/inc-1042');
+      const res = await fetch(`${API_BASE}/api/v1/incidents/inc-1042`);
       logNetworkCall('GET', '/api/v1/incidents/inc-1042', res.status, Date.now() - start);
       if (res.ok) {
         const data: ApiIncident = await res.json();
@@ -158,11 +162,11 @@ export default function ResolveIQDashboard() {
     }
   }, []);
 
-  // 2. Fetch Real 24 Microservices Catalog from Port 4000
+  // 2. Fetch Real 24 Microservices Catalog
   const fetchServicesData = useCallback(async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/services');
+      const res = await fetch(`${API_BASE}/api/v1/services`);
       logNetworkCall('GET', '/api/v1/services', res.status, Date.now() - start);
       if (res.ok) {
         const data: ApiService[] = await res.json();
@@ -173,11 +177,11 @@ export default function ResolveIQDashboard() {
     }
   }, []);
 
-  // 3. Fetch Real Database Locks from Port 4000
+  // 3. Fetch Real Database Locks
   const fetchDbLocksData = useCallback(async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/database/locks');
+      const res = await fetch(`${API_BASE}/api/v1/database/locks`);
       logNetworkCall('GET', '/api/v1/database/locks', res.status, Date.now() - start);
       if (res.ok) {
         const data = await res.json();
@@ -188,11 +192,11 @@ export default function ResolveIQDashboard() {
     }
   }, []);
 
-  // 4. Fetch Real Audit Events from Port 4000
+  // 4. Fetch Real Audit Events
   const fetchAuditData = useCallback(async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/audit/events');
+      const res = await fetch(`${API_BASE}/api/v1/audit/events`);
       logNetworkCall('GET', '/api/v1/audit/events', res.status, Date.now() - start);
       if (res.ok) {
         const data = await res.json();
@@ -203,11 +207,11 @@ export default function ResolveIQDashboard() {
     }
   }, []);
 
-  // 5. Fetch Real Service Telemetry from Port 4000
+  // 5. Fetch Real Service Telemetry
   const fetchTelemetryData = useCallback(async () => {
     const start = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/services/svc-payment/health');
+      const res = await fetch(`${API_BASE}/api/v1/services/svc-payment/health`);
       logNetworkCall('GET', '/api/v1/services/svc-payment/health', res.status, Date.now() - start);
       if (res.ok) {
         const data = await res.json();
@@ -218,13 +222,13 @@ export default function ResolveIQDashboard() {
     }
   }, []);
 
-  // 6. Ping AI Engine (Port 8000)
+  // 6. Ping AI Engine
   const checkAiHealth = useCallback(async () => {
     const start = Date.now();
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const res = await fetch('http://localhost:8000/health', { signal: controller.signal });
+      const res = await fetch(`${AI_BASE}/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
       logNetworkCall('GET', '/health', res.status, Date.now() - start);
       if (res.ok) {
@@ -270,7 +274,7 @@ export default function ResolveIQDashboard() {
     // 1. POST /remediation/approve
     const startApprove = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/incidents/inc-1042/remediation/approve', {
+      const res = await fetch(`${API_BASE}/api/v1/incidents/inc-1042/remediation/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -288,7 +292,7 @@ export default function ResolveIQDashboard() {
     // 2. POST /remediation/execute
     const startExec = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/incidents/inc-1042/remediation/execute', {
+      const res = await fetch(`${API_BASE}/api/v1/incidents/inc-1042/remediation/execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -305,7 +309,7 @@ export default function ResolveIQDashboard() {
     // 3. PATCH /incidents/inc-1042/status -> RESOLVED
     const startPatch = Date.now();
     try {
-      const res = await fetch('http://localhost:4000/api/v1/incidents/inc-1042/status', {
+      const res = await fetch(`${API_BASE}/api/v1/incidents/inc-1042/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -357,7 +361,7 @@ export default function ResolveIQDashboard() {
     const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     try {
-      const res = await fetch('http://localhost:8000/api/v1/chat', {
+      const res = await fetch(`${AI_BASE}/api/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
@@ -400,7 +404,7 @@ export default function ResolveIQDashboard() {
   const handleKillLock = async (pid: number) => {
     const start = Date.now();
     try {
-      const res = await fetch(`http://localhost:4000/api/v1/database/locks/${pid}/kill`, {
+      const res = await fetch(`${API_BASE}/api/v1/database/locks/${pid}/kill`, {
         method: 'POST'
       });
       logNetworkCall('POST', `/api/v1/database/locks/${pid}/kill`, res.status, Date.now() - start);
@@ -418,7 +422,7 @@ export default function ResolveIQDashboard() {
     const start = Date.now();
     if (type === 'meet') {
       try {
-        const res = await fetch('http://localhost:4000/api/v1/integrations/calendar/war-room', {
+        const res = await fetch(`${API_BASE}/api/v1/integrations/calendar/war-room`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ incidentId: incident?.incidentNumber || 'INC-1042', title: 'SEV-1 War Room' })
@@ -431,7 +435,7 @@ export default function ResolveIQDashboard() {
       }
     } else if (type === 'jira') {
       try {
-        const res = await fetch('http://localhost:4000/api/v1/integrations/jira/ticket', {
+        const res = await fetch(`${API_BASE}/api/v1/integrations/jira/ticket`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ incidentId: incident?.incidentNumber || 'INC-1042', projectKey: 'PROD', priority: 'Highest' })
@@ -444,7 +448,7 @@ export default function ResolveIQDashboard() {
       }
     } else {
       try {
-        const res = await fetch('http://localhost:4000/api/v1/integrations/teams/notify', {
+        const res = await fetch(`${API_BASE}/api/v1/integrations/teams/notify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ incidentId: incident?.incidentNumber || 'INC-1042', channel: '#incident-war-room' })
@@ -584,8 +588,8 @@ export default function ResolveIQDashboard() {
                 <button
                   onClick={() => setActiveTab('incident')}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === 'incident'
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
                     }`}
                 >
                   <div className="flex items-center space-x-2.5">
@@ -593,8 +597,8 @@ export default function ResolveIQDashboard() {
                     <span>Incident Triage</span>
                   </div>
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${isResolved
-                      ? (activeTab === 'incident' ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-600')
-                      : 'bg-red-600 text-white'
+                    ? (activeTab === 'incident' ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-600')
+                    : 'bg-red-600 text-white'
                     }`}>
                     {isResolved ? 'RESOLVED' : (incident?.severity || 'SEV-1')}
                   </span>
@@ -604,8 +608,8 @@ export default function ResolveIQDashboard() {
                 <button
                   onClick={() => setActiveTab('services')}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === 'services'
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
                     }`}
                 >
                   <div className="flex items-center space-x-2.5">
@@ -622,8 +626,8 @@ export default function ResolveIQDashboard() {
                 <button
                   onClick={() => setActiveTab('database')}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === 'database'
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
                     }`}
                 >
                   <div className="flex items-center space-x-2.5">
@@ -631,8 +635,8 @@ export default function ResolveIQDashboard() {
                     <span>Database & Pools</span>
                   </div>
                   <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono font-medium ${isResolved
-                      ? (activeTab === 'database' ? 'text-neutral-400' : 'text-neutral-500')
-                      : 'bg-red-50 text-red-600 font-bold'
+                    ? (activeTab === 'database' ? 'text-neutral-400' : 'text-neutral-500')
+                    : 'bg-red-50 text-red-600 font-bold'
                     }`}>
                     {isResolved ? '42%' : '100%'}
                   </span>
@@ -642,8 +646,8 @@ export default function ResolveIQDashboard() {
                 <button
                   onClick={() => setActiveTab('integrations')}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === 'integrations'
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
                     }`}
                 >
                   <div className="flex items-center space-x-2.5">
@@ -656,8 +660,8 @@ export default function ResolveIQDashboard() {
                 <button
                   onClick={() => setActiveTab('audit')}
                   className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${activeTab === 'audit'
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
+                    ? 'bg-neutral-900 text-white shadow-xs'
+                    : 'text-neutral-600 hover:text-black hover:bg-neutral-100'
                     }`}
                 >
                   <div className="flex items-center space-x-2.5">
@@ -710,8 +714,8 @@ export default function ResolveIQDashboard() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center space-x-2">
                       <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono uppercase tracking-wide ${isResolved
-                          ? 'bg-neutral-100 text-neutral-800'
-                          : 'bg-red-50 text-red-700'
+                        ? 'bg-neutral-100 text-neutral-800'
+                        : 'bg-red-50 text-red-700'
                         }`}>
                         {isResolved ? 'RESOLVED' : `${incident?.severity || 'SEV-1'} ${incident?.status || 'INVESTIGATING'}`}
                       </span>
@@ -789,7 +793,7 @@ export default function ResolveIQDashboard() {
                   </div>
 
                   <div className="p-3.5 rounded-lg bg-neutral-50 border-l-2 border-red-600 text-xs text-neutral-800 font-mono leading-relaxed">
-                    <strong>Isolated Root Cause:</strong> {incident?.rca?.rootCause || 'Deployment v1.8.2 introduced an unclosed DB cursor in async worker (checkout_worker.py:L142), leaking active connections until the 100/100 pool limit was saturated.'}
+                    <strong>Isolated Root Cause:</strong> {incident?.rca?.rootCause || 'Deployment v1.8.+2 introduced an unclosed DB cursor in async worker (checkout_worker.py:L142), leaking active connections until the 100/100 pool limit was saturated.'}
                   </div>
 
                   {/* 4 Proof Chips */}
@@ -940,8 +944,8 @@ export default function ResolveIQDashboard() {
                       {services.filter(s => s.status === 'HEALTHY').length} Operational
                     </span>
                     <span className={`px-2.5 py-1 rounded font-medium ${services.filter(s => s.status !== 'HEALTHY').length === 0
-                        ? 'bg-neutral-100 text-neutral-800'
-                        : 'bg-red-50 text-red-700 font-bold'
+                      ? 'bg-neutral-100 text-neutral-800'
+                      : 'bg-red-50 text-red-700 font-bold'
                       }`}>
                       {services.filter(s => s.status !== 'HEALTHY').length} Degraded
                     </span>
@@ -980,8 +984,8 @@ export default function ResolveIQDashboard() {
                               </td>
                               <td className="p-3">
                                 <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${isDegraded
-                                    ? 'bg-red-100 text-red-700 font-bold'
-                                    : 'bg-neutral-100 text-neutral-700'
+                                  ? 'bg-red-100 text-red-700 font-bold'
+                                  : 'bg-neutral-100 text-neutral-700'
                                   }`}>
                                   {svc.status}
                                 </span>
@@ -1153,7 +1157,7 @@ export default function ResolveIQDashboard() {
                       onClick={async () => {
                         const start = Date.now();
                         try {
-                          const res = await fetch('http://localhost:4000/api/v1/audit/events/export', { method: 'POST' });
+                          const res = await fetch(`${API_BASE}/api/v1/audit/events/export`, { method: 'POST' });
                           logNetworkCall('POST', '/api/v1/audit/events/export', res.status, Date.now() - start);
                           const data = await res.json();
                           setIntegrationFeedback(`Export Generated via API: ${data.downloadUrl}`);
@@ -1248,8 +1252,8 @@ export default function ResolveIQDashboard() {
                 <div
                   key={msg.id}
                   className={`p-3.5 rounded-2xl leading-relaxed ${msg.sender === 'user'
-                      ? 'bg-black text-white ml-6 rounded-br-xs'
-                      : 'bg-neutral-100/80 text-neutral-900 mr-2 rounded-bl-xs border border-neutral-200/50'
+                    ? 'bg-black text-white ml-6 rounded-br-xs'
+                    : 'bg-neutral-100/80 text-neutral-900 mr-2 rounded-bl-xs border border-neutral-200/50'
                     }`}
                 >
                   <div className="flex items-center justify-between text-[10px] mb-1 opacity-60">

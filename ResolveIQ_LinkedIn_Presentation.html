@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ResolveIQ — Autonomous SRE Incident & Operations Platform</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+    @page {
+      size: 16in 9in;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #07090e;
+      color: #f1f5f9;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .slide {
+      width: 16in;
+      height: 9in;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+      background: #07090e radial-gradient(circle at 85% 15%, rgba(99, 102, 241, 0.12) 0%, transparent 50%),
+                  radial-gradient(circle at 15% 85%, rgba(6, 182, 212, 0.10) 0%, transparent 45%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 3rem 4rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    /* Subtle background grid pattern */
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .content-layer {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Headers & Badges */
+    .top-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-family: 'JetBrains Mono', monospace;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: #94a3b8;
+    }
+
+    .badge.cyan { border-color: rgba(6, 182, 212, 0.4); color: #38bdf8; background: rgba(6, 182, 212, 0.08); }
+    .badge.indigo { border-color: rgba(99, 102, 241, 0.4); color: #818cf8; background: rgba(99, 102, 241, 0.08); }
+    .badge.emerald { border-color: rgba(16, 185, 129, 0.4); color: #34d399; background: rgba(16, 185, 129, 0.08); }
+    .badge.rose { border-color: rgba(244, 63, 94, 0.4); color: #fb7185; background: rgba(244, 63, 94, 0.08); }
+    .badge.amber { border-color: rgba(245, 158, 11, 0.4); color: #fbbf24; background: rgba(245, 158, 11, 0.08); }
+
+    .slide-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .slide-title-block {
+      margin-bottom: 2rem;
+    }
+
+    h1.slide-title {
+      font-size: 2.6rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 0.4rem;
+    }
+
+    p.slide-subtitle {
+      font-size: 1.15rem;
+      color: #94a3b8;
+      max-width: 90%;
+      line-height: 1.45;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.75rem;
+      flex: 1;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1.5rem;
+      flex: 1;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      flex: 1;
+    }
+
+    .card {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 18px;
+      padding: 1.75rem;
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .card.glow-cyan { border-color: rgba(6, 182, 212, 0.25); box-shadow: 0 0 30px rgba(6, 182, 212, 0.06); }
+    .card.glow-indigo { border-color: rgba(99, 102, 241, 0.25); box-shadow: 0 0 30px rgba(99, 102, 241, 0.06); }
+    .card.glow-emerald { border-color: rgba(16, 185, 129, 0.25); box-shadow: 0 0 30px rgba(16, 185, 129, 0.06); }
+    .card.glow-rose { border-color: rgba(244, 63, 94, 0.25); box-shadow: 0 0 30px rgba(244, 63, 94, 0.06); }
+
+    .card-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .card-desc {
+      font-size: 0.95rem;
+      color: #94a3b8;
+      line-height: 1.55;
+    }
+
+    /* Lists inside cards */
+    .feature-list {
+      list-style: none;
+      margin-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .feature-list li {
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      line-height: 1.45;
+    }
+
+    .feature-list li strong {
+      color: #ffffff;
+    }
+
+    .bullet-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #06b6d4;
+      margin-top: 0.45rem;
+      flex-shrink: 0;
+    }
+
+    .bullet-dot.indigo { background: #818cf8; }
+    .bullet-dot.emerald { background: #34d399; }
+    .bullet-dot.rose { background: #fb7185; }
+
+    /* Code & Mono blocks */
+    .code-box {
+      background: #030712;
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: #93c5fd;
+      line-height: 1.55;
+      overflow: hidden;
+      margin-top: 0.75rem;
+    }
+
+    .code-box .kw { color: #f43f5e; font-weight: 600; }
+    .code-box .str { color: #34d399; }
+    .code-box .num { color: #fbbf24; }
+    .code-box .com { color: #64748b; font-style: italic; }
+
+    /* Flow Diagrams */
+    .flow-chain {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 1.5rem 0;
+      gap: 0.75rem;
+    }
+
+    .flow-step {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 1.25rem;
+      flex: 1;
+      text-align: center;
+      position: relative;
+    }
+
+    .flow-step.active {
+      border-color: #06b6d4;
+      background: rgba(6, 182, 212, 0.08);
+    }
+
+    .flow-step-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #06b6d4;
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+    }
+
+    .flow-step-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.35rem;
+    }
+
+    .flow-step-desc {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      line-height: 1.4;
+    }
+
+    .flow-arrow {
+      color: #475569;
+      font-size: 1.4rem;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    /* Big Metric Callout */
+    .metric-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+    }
+
+    .metric-val {
+      font-size: 3.2rem;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1;
+      background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .metric-val.green {
+      background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .metric-val.red {
+      background: linear-gradient(135deg, #fb7185 0%, #e11d48 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .metric-label {
+      font-size: 0.88rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #94a3b8;
+      font-weight: 600;
+      margin-top: 0.4rem;
+    }
+
+    /* Footer */
+    .footer-bar {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: #64748b;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .author-tag {
+      color: #cbd5e1;
+      font-weight: 600;
+    }
+
+    .author-tag span {
+      color: #38bdf8;
+    }
+
+    /* COVER SPECIFIC */
+    .cover-container {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+      height: 100%;
+      max-width: 90%;
+    }
+
+    .cover-title {
+      font-size: 4.4rem;
+      font-weight: 900;
+      letter-spacing: -0.04em;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #ffffff 10%, #cbd5e1 50%, #64748b 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin: 1rem 0;
+    }
+
+    .cover-subtitle {
+      font-size: 1.7rem;
+      color: #94a3b8;
+      font-weight: 500;
+      line-height: 1.4;
+      margin-bottom: 2.5rem;
+      max-width: 85%;
+    }
+
+    .cover-tech-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 3.5rem;
+    }
+
+    .tech-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 0.5rem 1rem;
+      border-radius: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .author-card {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 1rem 1.75rem;
+      border-radius: 16px;
+    }
+
+    .avatar-circle {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: white;
+    }
+
+    .author-info h4 {
+      font-size: 1.15rem;
+      color: white;
+      font-weight: 700;
+    }
+
+    .author-info p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 1: COVER & HERO HOOK -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge cyan">PRODUCTION CASE STUDY • SRE ARCHITECTURE</div>
+        <div class="slide-num">01 / 10</div>
+      </div>
+
+      <div class="cover-container">
+        <h1 class="cover-title">ResolveIQ</h1>
+        <p class="cover-subtitle">
+          Autonomous SRE Incident & Operations Resolution Platform powered by 
+          <strong>LangGraph Multi-Agent Swarms</strong>, <strong>Pinecone Hybrid RAG</strong>, and <strong>Human-in-the-Loop Remediation</strong>.
+        </p>
+
+        <div class="cover-tech-row">
+          <div class="tech-pill">⚡ LangGraph StateGraph</div>
+          <div class="tech-pill">🧠 Google Gemini 2.5 Flash</div>
+          <div class="tech-pill">🌲 Pinecone Serverless Vector DB</div>
+          <div class="tech-pill">🌐 Next.js 15 & React 19</div>
+          <div class="tech-pill">🐘 Neon PostgreSQL + Prisma</div>
+          <div class="tech-pill">🚀 FastAPI Backend Core</div>
+        </div>
+
+        <div class="author-card">
+          <div class="avatar-circle">M</div>
+          <div class="author-info">
+            <h4>Madhavan M</h4>
+            <p>Full Stack & AI Systems Engineer • GitHub: @Madhavan-M07</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>ResolveIQ Architecture Whitepaper</div>
+        <div>Swipe to explore the system design ➔</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 2: THE $9,000/MINUTE PROBLEM -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge rose">THE PROBLEM STATEMENT</div>
+        <div class="slide-num">02 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">The $9,000/Minute Downtime Crisis</h1>
+        <p class="slide-subtitle">
+          Why traditional on-call triage fails during SEV-1 production outages and human cognitive overload kills MTTR.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Card 1 -->
+        <div class="card glow-rose">
+          <div class="metric-hero">
+            <span class="metric-val red">$9,000</span>
+            <span class="metric-label">Avg Cost per Minute of Downtime</span>
+          </div>
+          <p class="card-desc">
+            According to Gartner SRE benchmarks, an enterprise outage costs over $540,000 per hour. Every minute wasted debugging is pure revenue destruction.
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot rose"></span> <strong>Customer Churn:</strong> Payment & checkout failures immediately destroy user trust.</li>
+            <li><span class="bullet-dot rose"></span> <strong>SLA Breaches:</strong> Severe contractual penalties on Tier-1 microservices.</li>
+          </ul>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="card">
+          <div class="card-title">🔍 Tool Fragmentation</div>
+          <p class="card-desc">
+            During an active SEV-1 alert at 3:00 AM, engineers must manually correlate data across 5+ disconnected dashboards:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot"></span> <strong>Datadog & Prometheus:</strong> Spotting connection ceiling breaches.</li>
+            <li><span class="bullet-dot"></span> <strong>CloudWatch & Loki:</strong> Sifting through 100,000+ noisy stack traces.</li>
+            <li><span class="bullet-dot"></span> <strong>GitHub & ArgoCD:</strong> Checking who deployed what commit 30 mins ago.</li>
+            <li><span class="bullet-dot"></span> <strong>Slack & Jira:</strong> Scrambling to open war rooms and notify stakeholders.</li>
+          </ul>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="card glow-cyan">
+          <div class="card-title">💡 The ResolveIQ Solution</div>
+          <p class="card-desc">
+            Replace manual cognitive panic with an <strong>autonomous multi-agent swarm</strong> that executes in seconds:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot"></span> <strong>Ingests Real Telemetry:</strong> Detects pool exhaustion & latency spikes.</li>
+            <li><span class="bullet-dot"></span> <strong>Isolates Git Commits:</strong> Maps failure directly to the exact file & line.</li>
+            <li><span class="bullet-dot"></span> <strong>Retrieves Proven Runbooks:</strong> Semantic search on historical fixes.</li>
+            <li><span class="bullet-dot"></span> <strong>HITL Remediation:</strong> 1-click verified rollback before users notice.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 02: Problem Analysis</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 3: SYSTEM ARCHITECTURE -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge cyan">FULL-STACK SYSTEM ARCHITECTURE</div>
+        <div class="slide-num">03 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">4-Tier Decoupled Platform Blueprint</h1>
+        <p class="slide-subtitle">
+          Engineered as high-throughput, fault-tolerant microservices communicating over REST, SSE, and Vector Protocols.
+        </p>
+      </div>
+
+      <div class="grid-4">
+        <!-- Tier 1 -->
+        <div class="card glow-cyan">
+          <div class="card-title">1. Web Command Center</div>
+          <div class="badge cyan" style="margin-bottom:0.75rem;">resolveiq-web :3000</div>
+          <p class="card-desc">
+            Next.js 15 App Router + React 19 single pane of glass.
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot"></span> 24 Microservices Live Catalog</li>
+            <li><span class="bullet-dot"></span> Real-time Network Log Stream</li>
+            <li><span class="bullet-dot"></span> Interactive AI Copilot Panel</li>
+            <li><span class="bullet-dot"></span> 1-Click Rollback Execution</li>
+          </ul>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="card glow-indigo">
+          <div class="card-title">2. API Gateway Core</div>
+          <div class="badge indigo" style="margin-bottom:0.75rem;">resolveiq-api :4000</div>
+          <p class="card-desc">
+            Express & TypeScript mission-critical gateway.
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot indigo"></span> Neon PostgreSQL via Prisma</li>
+            <li><span class="bullet-dot indigo"></span> Active DB Lock Kill Engine</li>
+            <li><span class="bullet-dot indigo"></span> Idempotent Remediation Exec</li>
+            <li><span class="bullet-dot indigo"></span> Immutable Audit Trail Stream</li>
+          </ul>
+        </div>
+
+        <!-- Tier 3 -->
+        <div class="card glow-emerald">
+          <div class="card-title">3. AI Brain & Agents</div>
+          <div class="badge emerald" style="margin-bottom:0.75rem;">resolveiq-ai :8000</div>
+          <p class="card-desc">
+            FastAPI + LangGraph cyclical agent state machine.
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot emerald"></span> Gemini Flash LLM Synthesis</li>
+            <li><span class="bullet-dot emerald"></span> Multi-Agent StateGraph</li>
+            <li><span class="bullet-dot emerald"></span> Root Cause Probability Engine</li>
+            <li><span class="bullet-dot emerald"></span> Non-blocking thread pooling</li>
+          </ul>
+        </div>
+
+        <!-- Tier 4 -->
+        <div class="card glow-rose">
+          <div class="card-title">4. Vector & Data Store</div>
+          <div class="badge rose" style="margin-bottom:0.75rem;">Pinecone Serverless</div>
+          <p class="card-desc">
+            Cloud vector index with multi-tenant namespaces.
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot rose"></span> 3072-dim Cosine Embeddings</li>
+            <li><span class="bullet-dot rose"></span> Namespace: org_acme_corp</li>
+            <li><span class="bullet-dot rose"></span> SRE Runbooks & Post-Mortems</li>
+            <li><span class="bullet-dot rose"></span> Sub-millisecond similarity queries</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 03: End-to-End System Blueprint</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 4: LANGGRAPH MULTI-AGENT STATE MACHINE -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge indigo">AI ORCHESTRATION ENGINE</div>
+        <div class="slide-num">04 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">LangGraph Multi-Agent State Machine</h1>
+        <p class="slide-subtitle">
+          Cyclic agent orchestration with checkpointed states, evidence validation, and strict Human-in-the-Loop guardrails.
+        </p>
+      </div>
+
+      <!-- Flow diagram -->
+      <div class="flow-chain">
+        <div class="flow-step">
+          <div class="flow-step-num">Step 01</div>
+          <div class="flow-step-title">Classifier Node</div>
+          <div class="flow-step-desc">Gemini Flash parses alert into domain: DATABASE, INFRA, APP, or NET.</div>
+        </div>
+        <div class="flow-arrow">➔</div>
+        <div class="flow-step">
+          <div class="flow-step-num">Step 02</div>
+          <div class="flow-step-title">Evidence Collector</div>
+          <div class="flow-step-desc">Pulls verified proof: 100/100 DB pool ceiling, 4.82s latency, Git commit.</div>
+        </div>
+        <div class="flow-arrow">➔</div>
+        <div class="flow-step">
+          <div class="flow-step-num">Step 03</div>
+          <div class="flow-step-title">Pinecone RAG</div>
+          <div class="flow-step-desc">Vector lookup on runbooks & historical post-mortems (score > 0.85).</div>
+        </div>
+        <div class="flow-arrow">➔</div>
+        <div class="flow-step active">
+          <div class="flow-step-num">Step 04</div>
+          <div class="flow-step-title">RCA Synthesizer</div>
+          <div class="flow-step-desc">Calculates root cause probability (94%) & generates rollback plan.</div>
+        </div>
+        <div class="flow-arrow">➔</div>
+        <div class="flow-step" style="border-color:#fb7185; background:rgba(244,63,94,0.08);">
+          <div class="flow-step-num" style="color:#fb7185;">Checkpoint</div>
+          <div class="flow-step-title">HITL Approval</div>
+          <div class="flow-step-desc">Halts execution until Lead SRE clicks Approve on the dashboard.</div>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top: 1rem;">
+        <div class="card">
+          <div class="card-title">🧠 StateGraph Schema (Python Pydantic)</div>
+          <div class="code-box">
+<span class="kw">class</span> <span class="num">InvestigationState</span>(TypedDict):
+    incident_id: <span class="str">str</span>
+    service_name: <span class="str">str</span>
+    evidence_list: <span class="str">List[EvidenceItem]</span>
+    matched_runbooks: <span class="str">List[Dict[str, Any]]</span>
+    root_cause: <span class="str">Optional[str]</span>
+    confidence_score: <span class="num">float</span>
+    remediation_plan: <span class="str">List[RemediationAction]</span>
+    needs_human_approval: <span class="kw">bool</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🛡️ Why Cyclic State Graphs Win Over Chains</div>
+          <p class="card-desc">
+            Linear LLM pipelines (LangChain chains) break when evidence is incomplete or ambiguous. 
+            LangGraph allows <strong>conditional edge routing</strong>:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot indigo"></span> <strong>Confidence &lt; 80%:</strong> Loops back to ask clarifying telemetry or operator input.</li>
+            <li><span class="bullet-dot indigo"></span> <strong>Zero Hallucinations:</strong> Root cause synthesis is bounded strictly by the collected evidence array.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 04: Agent Swarm Design</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 5: PINECONE SERVERLESS HYBRID RAG -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge emerald">VECTOR SEARCH & HYBRID RAG</div>
+        <div class="slide-num">05 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Grounding AI with Pinecone Serverless</h1>
+        <p class="slide-subtitle">
+          How semantic vector retrieval prevents hallucinations and injects institutional company knowledge into triage.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Col 1 -->
+        <div class="card glow-emerald">
+          <div class="card-title">🌲 Vector Pipeline</div>
+          <p class="card-desc">
+            Every runbook and post-mortem is embedded and indexed in cloud vector space:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot emerald"></span> <strong>Embedding Model:</strong> Google Gemini 3072-dimension vectors.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Index Name:</strong> <code>resolveiq-knowledge</code></li>
+            <li><span class="bullet-dot emerald"></span> <strong>Multi-Tenant Namespace:</strong> <code>org_acme_corp</code> ensures strict organizational data isolation.</li>
+          </ul>
+        </div>
+
+        <!-- Col 2 -->
+        <div class="card">
+          <div class="card-title">📚 Indexed Knowledge Base</div>
+          <p class="card-desc">
+            Sample operational documents loaded into Pinecone:
+          </p>
+          <div class="code-box" style="font-size:0.75rem;">
+<span class="com"># rb-db-pool-01</span>
+"When payment-api reports PG::ConnectionBad
+or active connections equal pool ceiling (100):
+1. Check if deploy altered connection pool batching.
+2. Immediate Mitigation: Revert to previous build.
+3. Secondary: Temporarily scale pool from 100 to 150."
+
+<span class="com"># inc-past-921 Post-Mortem</span>
+"Incident 921: Batch routine failed to return
+connections to pool. Resolved via immediate rollback."
+          </div>
+        </div>
+
+        <!-- Col 3 -->
+        <div class="card">
+          <div class="card-title">⚡ Sub-Millisecond Retrieval</div>
+          <p class="card-desc">
+            FastAPI queries Pinecone asynchronously in worker threads:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot emerald"></span> <strong>Cosine Similarity:</strong> Matches technical symptoms to the exact runbook.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Strict Timeout:</strong> 2.0s bounded timeout with in-memory caching fallback.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Context Grounding:</strong> Injected directly into Gemini prompt context.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 05: Pinecone Hybrid RAG</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 6: CASE STUDY: INC-1042 OUTAGE -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge rose">INCIDENT CASE STUDY</div>
+        <div class="slide-num">06 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Case Study: The INC-1042 Outage</h1>
+        <p class="slide-subtitle">
+          How ResolveIQ solved a critical SEV-1 Payment Gateway outage in 4.2 minutes instead of 45 minutes.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Card 1 -->
+        <div class="card glow-rose">
+          <div class="card-title">🚨 The Outage Symptoms</div>
+          <div class="metric-hero">
+            <span class="metric-val red">4,820 ms</span>
+            <span class="metric-label">P95 Latency (+1,908% Spike)</span>
+          </div>
+          <ul class="feature-list">
+            <li><span class="bullet-dot rose"></span> <strong>31.4% HTTP 504:</strong> Gateway timeouts on <code>POST /v1/charges</code>.</li>
+            <li><span class="bullet-dot rose"></span> <strong>100/100 DB Ceiling:</strong> Active PostgreSQL connections maxed out.</li>
+            <li><span class="bullet-dot rose"></span> <strong>Lock Contention:</strong> PID 4821 blocking subsequent transactions.</li>
+          </ul>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="card">
+          <div class="card-title">🔎 Commit & Code Culprit</div>
+          <p class="card-desc">
+            Deploy metadata correlated 8 minutes before the alert:
+          </p>
+          <div class="code-box" style="font-size:0.75rem;">
+<span class="com"># Commit 8b7f3a1 by alex.dev (v1.8.2)</span>
+<span class="com"># File: checkout_worker.py:L142</span>
+
+<span class="kw">async def</span> <span class="num">process_batch</span>(charges):
+    conn = <span class="kw">await</span> db_pool.acquire()
+    cursor = conn.cursor()
+    <span class="com"># BUG: Missing try/finally block!</span>
+    <span class="com"># Cursor left unclosed on query timeout,</span>
+    <span class="com"># permanently leaking connection slot!</span>
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="card glow-emerald">
+          <div class="card-title">✅ Autonomous Resolution</div>
+          <div class="metric-hero">
+            <span class="metric-val green">4.2 min</span>
+            <span class="metric-label">Total Time to Recovery (MTTR)</span>
+          </div>
+          <ul class="feature-list">
+            <li><span class="bullet-dot emerald"></span> <strong>Agent Diagnosis:</strong> Identified unclosed cursor in 1.4s.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>SRE Approval:</strong> Lead SRE confirmed 1-click rollback.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Rollback Executed:</strong> payment-api restored to v1.8.1.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Recovery:</strong> Connections dropped to 22/100, latency to 180ms.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 06: Incident INC-1042 Deep Dive</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 7: HUMAN-IN-THE-LOOP (HITL) REMEDIATION -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge amber">SAFETY & GUARDRAILS</div>
+        <div class="slide-num">07 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Human-in-the-Loop (HITL) Remediation</h1>
+        <p class="slide-subtitle">
+          Why fully autonomous AI in production is reckless, and how two-phase authorization keeps operations safe.
+        </p>
+      </div>
+
+      <div class="grid-2">
+        <!-- Left Card -->
+        <div class="card glow-amber">
+          <div class="card-title">⚖️ The Production Philosophy</div>
+          <p class="card-desc" style="font-size:1.1rem; color:#f1f5f9; font-weight:600; margin-bottom:1rem;">
+            "AI analyzes and synthesizes; Humans authorize; Agents execute."
+          </p>
+          <p class="card-desc">
+            Allowing an LLM to blindly run shell scripts or roll back clusters without human review causes cascading catastrophic failures. ResolveIQ implements <strong>two-phase atomic remediation</strong>:
+          </p>
+          <ul class="feature-list" style="margin-top:1.25rem;">
+            <li><span class="bullet-dot" style="background:#f59e0b;"></span> <strong>Phase 1: Proposal:</strong> The AI drafts a strictly typed remediation action with risk score, target version, and dry-run output.</li>
+            <li><span class="bullet-dot" style="background:#f59e0b;"></span> <strong>Phase 2: Authorization:</strong> SRE Lead reviews diff and signs off via UI with rationale.</li>
+            <li><span class="bullet-dot" style="background:#f59e0b;"></span> <strong>Idempotency Keys:</strong> <code>exec-1042-uuid</code> guarantees remediation actions cannot be triggered twice.</li>
+          </ul>
+        </div>
+
+        <!-- Right Card -->
+        <div class="card">
+          <div class="card-title">🛠️ Remediation Capabilities Built-In</div>
+          <ul class="feature-list" style="gap:1.25rem;">
+            <li>
+              <strong style="color:#38bdf8;">1. Automated Kubernetes Rollback</strong><br>
+              Reverts container deployment to last known stable SHA (v1.8.2 ➔ v1.8.1) in 4.1 seconds.
+            </li>
+            <li>
+              <strong style="color:#34d399;">2. Live PostgreSQL Lock Termination</strong><br>
+              Direct backend endpoint <code>POST /database/locks/:pid/kill</code> terminates hung locks without restarting the database.
+            </li>
+            <li>
+              <strong style="color:#fbbf24;">3. Connection Pool Scaling</strong><br>
+              Dynamic capacity adjustment to absorb traffic surges while engineers patch leaky queries.
+            </li>
+            <li>
+              <strong style="color:#cbd5e1;">4. Immutable Audit Compliance</strong><br>
+              Every approval, rationale, and execution is logged permanently in Neon PostgreSQL for SOC-2 compliance.
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 07: Human-in-the-Loop Safety</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 8: BACKEND & DATABASE ENGINEERING -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge indigo">BACKEND & DATA LAYER</div>
+        <div class="slide-num">08 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Backend Architecture: Neon & Prisma</h1>
+        <p class="slide-subtitle">
+          Built with Express, Prisma ORM, and Neon Serverless PostgreSQL with sub-10ms response latencies.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Card 1 -->
+        <div class="card glow-indigo">
+          <div class="card-title">🐘 Neon PostgreSQL</div>
+          <p class="card-desc">
+            Serverless cloud PostgreSQL with modern connection pooling:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot indigo"></span> <strong>Connection Pooling:</strong> PgBouncer integration handles traffic spikes effortlessly.</li>
+            <li><span class="bullet-dot indigo"></span> <strong>Storage Branching:</strong> Instant staging environments for chaos testing.</li>
+            <li><span class="bullet-dot indigo"></span> <strong>Strict SSL/TLS:</strong> TLS 1.3 encryption across all gateway transactions.</li>
+          </ul>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="card">
+          <div class="card-title">📐 Prisma ORM Models</div>
+          <p class="card-desc">
+            Strongly typed domain models ensuring schema integrity:
+          </p>
+          <div class="code-box" style="font-size:0.75rem;">
+<span class="kw">model</span> <span class="num">Incident</span> {
+  id             String   @id
+  incidentNumber String   @unique
+  severity       IncidentSeverity
+  status         IncidentStatus
+  serviceId      String
+  metrics        Json
+  rca            Json?
+  startedAt      DateTime @default(now())
+  resolvedAt     DateTime?
+}
+          </div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="card glow-cyan">
+          <div class="card-title">⚡ High-Concurrency Gateway</div>
+          <p class="card-desc">
+            Express API Gateway optimizations:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot"></span> <strong>Microservices Router:</strong> Serves 24 microservice topologies with upstream/downstream maps.</li>
+            <li><span class="bullet-dot"></span> <strong>In-Memory Cache Fallbacks:</strong> Guarantees 100% uptime even during network partitions.</li>
+            <li><span class="bullet-dot"></span> <strong>Integrated Integrations:</strong> Real endpoints for Google Meet War Rooms and Jira ticketing.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 08: Backend Engineering Deep Dive</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 9: FRONTEND COMMAND CENTER -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge cyan">FRONTEND & DEVELOPER EXPERIENCE</div>
+        <div class="slide-num">09 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Next.js 15 Command Center UX</h1>
+        <p class="slide-subtitle">
+          Designed for maximum clarity, low cognitive load, and zero-latency feedback under high-stress incidents.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <!-- Feature 1 -->
+        <div class="card glow-cyan">
+          <div class="card-title">🖥️ Single Pane of Glass</div>
+          <p class="card-desc">
+            Consolidates everything an on-call engineer needs into one unified interface:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot"></span> <strong>Incident Triage View:</strong> Real-time latency chart, connection saturation gauge, and impact metrics.</li>
+            <li><span class="bullet-dot"></span> <strong>Services Catalog:</strong> 24 live microservices with P99 metrics and health badges.</li>
+            <li><span class="bullet-dot"></span> <strong>Database Locks:</strong> Table lock contention with 1-click PID termination.</li>
+          </ul>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="card">
+          <div class="card-title">📡 Live Network Inspector</div>
+          <p class="card-desc">
+            Embedded HTTP Transaction monitor in the UI:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot indigo"></span> <strong>Transparent Calls:</strong> Visualizes every request made to Port 4000 and Port 8000.</li>
+            <li><span class="bullet-dot indigo"></span> <strong>Latency Profiling:</strong> Exact round-trip duration (ms) for every API action.</li>
+            <li><span class="bullet-dot indigo"></span> <strong>Live Status Badges:</strong> Instant feedback for 200 OK and error states.</li>
+          </ul>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="card glow-emerald">
+          <div class="card-title">🤖 Embedded SRE Copilot</div>
+          <p class="card-desc">
+            Direct real-time conversational chat with Google Gemini:
+          </p>
+          <ul class="feature-list">
+            <li><span class="bullet-dot emerald"></span> <strong>Instant Quick Questions:</strong> "Why is rollback recommended?", "Who deployed v1.8.2?".</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Dynamic AI Synthesis:</strong> Answers generated live using Gemini Flash Lite.</li>
+            <li><span class="bullet-dot emerald"></span> <strong>Runbook Citations:</strong> Shows matching Pinecone documents in the UI.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 09: Frontend Architecture</div>
+        <div>ResolveIQ Autonomous SRE Platform</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- SLIDE 10: METRICS, IMPACT & CONNECT -->
+  <!-- ===================================================================== -->
+  <section class="slide">
+    <div class="content-layer">
+      <div class="top-meta">
+        <div class="badge emerald">RESULTS & KEY TAKEAWAYS</div>
+        <div class="slide-num">10 / 10</div>
+      </div>
+
+      <div class="slide-title-block">
+        <h1 class="slide-title">Results, Impact & Key Learnings</h1>
+        <p class="slide-subtitle">
+          How ResolveIQ transforms SRE operations, lessons learned from production AI, and future roadmap.
+        </p>
+      </div>
+
+      <div class="grid-3" style="margin-bottom:1.25rem;">
+        <div class="card glow-emerald" style="text-align:center; align-items:center;">
+          <span class="metric-val green">85%</span>
+          <span class="metric-label">Reduction in MTTR</span>
+          <p class="card-desc" style="margin-top:0.5rem; font-size:0.85rem;">From 45 mins average down to 4.2 mins with autonomous root cause correlation.</p>
+        </div>
+
+        <div class="card glow-cyan" style="text-align:center; align-items:center;">
+          <span class="metric-val">100%</span>
+          <span class="metric-label">Audit Trail Compliance</span>
+          <p class="card-desc" style="margin-top:0.5rem; font-size:0.85rem;">Zero unverified autonomous changes; every rollback signed off with operator rationale.</p>
+        </div>
+
+        <div class="card glow-indigo" style="text-align:center; align-items:center;">
+          <span class="metric-val green">&lt; 2.5s</span>
+          <span class="metric-label">AI Copilot Response</span>
+          <p class="card-desc" style="margin-top:0.5rem; font-size:0.85rem;">Blazing fast Gemini Flash synthesis grounded with Pinecone Serverless vector search.</p>
+        </div>
+      </div>
+
+      <div class="card" style="padding:1.25rem 2rem; background:rgba(15,23,42,0.8); border-color:rgba(255,255,255,0.12);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <h3 style="font-size:1.3rem; font-weight:800; color:#ffffff; margin-bottom:0.25rem;">Interested in AI-Driven Reliability Engineering?</h3>
+            <p style="color:#94a3b8; font-size:0.95rem;">Check out the codebase or connect with me on LinkedIn to discuss autonomous multi-agent systems.</p>
+          </div>
+          <div style="display:flex; gap:1rem;">
+            <div class="badge cyan" style="font-size:0.85rem; padding:0.6rem 1.25rem;">GitHub: @Madhavan-M07</div>
+            <div class="badge emerald" style="font-size:0.85rem; padding:0.6rem 1.25rem;">Let's Connect on LinkedIn ➔</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <div>Slide 10: Conclusion & Call to Action</div>
+        <div>Authored by Madhavan M • ResolveIQ</div>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>
